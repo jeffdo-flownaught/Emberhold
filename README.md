@@ -13,26 +13,6 @@ npm run dev
 
 Open the URL Vite prints (usually `http://localhost:5173`).
 
-## Deploy to GitHub Pages
-
-One-time setup:
-
-1. Push this repo to GitHub.
-2. In your repo on GitHub → **Settings → Pages**, set Source to **GitHub Actions**.
-
-Then to deploy:
-
-```bash
-git push   # the workflow at .github/workflows/deploy.yml builds and publishes
-```
-
-Or manually:
-
-```bash
-npm run deploy
-```
-
-Your playtest URL will be `https://<your-username>.github.io/<repo-name>/`.
 
 ## How to play
 
