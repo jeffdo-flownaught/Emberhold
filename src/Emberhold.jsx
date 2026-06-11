@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-/* ============ EMBERHOLD v10 — playable prototype ============
-   New in v10:
-   • Sever reduced to 3× damage; Quickdraw reduced to 3s.
-   • Thornwild attack speed up: spd 13 (0.52 attacks/sec).
-   • Map guarantees ≥1 waygate besides the converge gate and
-     ≥1 shrine (relic) — enforced after the 60%-combat pass.
-   • Legend documents waygate healing (30%) & revival (20%).
+/* ============ EMBERHOLD 0.013 — playable prototype ============
+   New in 0.013:
+   • Version numbers now display as 0.NNN. v13 = 0.013.
+   • New region: THE HOLLOWED DEEP — between the Marshland and
+     the Ogre Forest. 10 basics, 3 elites, boss (Hollow
+     Sovereign), 6 relics, 6 events. Random descent modifier
+     rolls when entering it, just like the forest.
+   • Region progression now: marsh → cave → forest. Beating
+     each region's boss unlocks descent to the next.
+   • Corruption math reworked: 1/3 of corruption carries over
+     to the next region as a baseline, and the per-encounter
+     accumulation rate DOUBLES each region (marsh 5%/depth,
+     cave 10%/depth, forest 20%/depth). Late forest pushes
+     genuinely feel terminal.
    Carried from v6: two regions (Forgotten Marshland → Ogre
    Forest), descent modifiers, attack-speed gauges, Taunt,
    Fenwick (Ranger — hero haste), Thornwild (Druid — enemy
@@ -14,6 +21,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 ============================================================ */
 
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Alegreya+Sans:wght@400;500;700&display=swap');`;
+
+const VERSION = "0.013";
 
 /* persistent save (localStorage) — survives the run/battle state isn't saved,
    only your Hold progression: resources, building levels, runs done, the
@@ -39,6 +48,82 @@ const usePersistent = (key, initial) => {
 };
 const clearSave = () => { try { localStorage.removeItem(SAVE_KEY); } catch {} };
 
+/* ---------- ambient music (Web Audio, no external assets) ---------- */
+/* Three soft procedural drones: warm "hold", cool "umbral", urgent "combat".
+   Each track is a small set of detuned sine pads with slow LFO modulation. */
+const MUSIC_TRACKS = {
+  hold:    { notes: [98.0, 130.81, 164.81, 196.0],   /* G2 C3 E3 G3 — warm major */ filter: 900, vol: 0.10 },
+  umbral:  { notes: [82.41, 110.0, 130.81, 174.61],  /* E2 A2 C3 F3 — minor 7th */  filter: 600, vol: 0.08 },
+  combat:  { notes: [73.42, 110.0, 138.59, 207.65],  /* D2 A2 C#3 G#3 — tense */    filter: 1200, vol: 0.09 },
+};
+class Music {
+  constructor() { this.ctx = null; this.nodes = []; this.current = null; this.enabled = false; this.volume = 0.5; this.master = null; this.trackVol = 0; }
+  ensure() {
+    if (!this.ctx) {
+      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return false; }
+    }
+    if (this.ctx.state === "suspended") this.ctx.resume();
+    return true;
+  }
+  setVolume(v) {
+    this.volume = Math.max(0, Math.min(1, v));
+    if (this.master && this.ctx) {
+      const t = this.ctx.currentTime;
+      this.master.gain.cancelScheduledValues(t);
+      this.master.gain.setValueAtTime(this.master.gain.value, t);
+      this.master.gain.linearRampToValueAtTime(this.trackVol * this.volume, t + 0.2);
+    }
+  }
+  stop() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.nodes.forEach(n => { try { n.gain.gain.cancelScheduledValues(t); n.gain.gain.setValueAtTime(n.gain.gain.value, t); n.gain.gain.linearRampToValueAtTime(0, t + 0.8); n.osc.stop(t + 0.9); n.lfo.stop(t + 0.9); } catch {} });
+    setTimeout(() => { this.nodes = []; }, 1000);
+    this.current = null;
+    this.master = null;
+  }
+  play(trackName) {
+    if (!this.enabled) return;
+    if (this.current === trackName) return;
+    if (!this.ensure()) return;
+    this.stop();
+    const track = MUSIC_TRACKS[trackName]; if (!track) return;
+    const ctx = this.ctx; const t = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0, t);
+    master.gain.linearRampToValueAtTime(track.vol * this.volume, t + 2.5);
+    this.master = master;
+    this.trackVol = track.vol;
+    const filt = ctx.createBiquadFilter();
+    filt.type = "lowpass"; filt.frequency.value = track.filter;
+    filt.connect(master); master.connect(ctx.destination);
+    track.notes.forEach((freq, i) => {
+      [0, 3].forEach((detune, j) => {
+        const osc = ctx.createOscillator();
+        osc.type = j === 0 ? "sine" : "triangle";
+        osc.frequency.value = freq;
+        osc.detune.value = detune * (i % 2 ? 1 : -1);
+        const g = ctx.createGain();
+        g.gain.value = 0.18 / track.notes.length;
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = 0.07 + i * 0.03;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = 0.05;
+        lfo.connect(lfoGain).connect(g.gain);
+        osc.connect(g).connect(filt);
+        osc.start(t); lfo.start(t);
+        this.nodes.push({ osc, lfo, gain: g });
+      });
+    });
+    this.current = trackName;
+  }
+  setEnabled(on) {
+    this.enabled = on;
+    if (!on) this.stop();
+  }
+}
+const MUSIC = new Music();
+
 const C = {
   bg: "#16121f", panel: "#211a2e", panel2: "#2a2138",
   ember: "#f08c3a", gold: "#e3b85c", umbral: "#43c5b2",
@@ -57,7 +142,7 @@ const HERO_DEFS = [
   { id: "syra", name: "Syrene", cls: "Pyromancer", icon: "🔥", baseHp: 70, atk: 6, def: 4, matk: 16, mdef: 12, crit: 12, eva: 8, acc: 92, spd: 12, ultName: "Cinder Nova", ultDesc: "Magic damage to ALL enemies" },
   { id: "prie", name: "Liora", cls: "Priest", icon: "🙏", baseHp: 75, atk: 5, def: 5, matk: 12, mdef: 14, crit: 5, eva: 8, acc: 92, spd: 11, ultName: "Sanctuary", ultDesc: "Heal the party 15 HP" },
   { id: "rang", name: "Fenwick", cls: "Ranger", icon: "🏹", baseHp: 80, atk: 14, def: 5, matk: 3, mdef: 6, crit: 15, eva: 14, acc: 97, spd: 18, ultName: "Quickdraw", ultDesc: "Fenwick gains +60% attack speed for 3s" },
-  { id: "drui", name: "Thornwild", cls: "Druid", icon: "🌿", baseHp: 90, atk: 8, def: 8, matk: 12, mdef: 10, crit: 8, eva: 8, acc: 90, spd: 13, ultName: "Entangle", ultDesc: "-50% attack speed on the focused enemy for 4s" },
+  { id: "drui", name: "Thornwild", cls: "Druid", icon: "🌿", baseHp: 90, atk: 8, def: 8, matk: 12, mdef: 10, crit: 8, eva: 8, acc: 90, spd: 13, ultName: "Wildkin Bloom", ultDesc: "Focused enemy: -50% atk speed 4s & 15 dmg · heal lowest-HP ally 15" },
 ];
 
 /* ---------- enemies ---------- */
@@ -90,7 +175,7 @@ const REGIONS = {
       { id: "idol", name: "Warding Idol", icon: "🗿", desc: "Enemies deal -15% damage", mod: { enemyAtkPct: -15 } },
       { id: "chalice", name: "Ember Chalice", icon: "🏆", desc: "+30 HP heal after each fight", mod: { healAfterFight: 30 } },
       { id: "hourglass", name: "Hourglass of Sol", icon: "⏳", desc: "Ultimates charge 40% faster", mod: { ultPct: 40 } },
-      { id: "coinpurse", name: "Bottomless Purse", icon: "💰", desc: "+50% gold from fights", mod: { goldPct: 50 } },
+      { id: "caravan", name: "Ember Caravan", icon: "🛒", desc: "+30% all resources from fights", mod: { allLootPct: 30 } },
       { id: "phoenix", name: "Phoenix Feather", icon: "🪶", desc: "First fallen hero revives at 30%", mod: { phoenix: 1 } },
     ],
     events: [
@@ -100,6 +185,43 @@ const REGIONS = {
       { text: "A drowned chest glimmers beneath the black water.", a: { label: "Dive for it", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 60, blessing: "You wrench it free: +60 gold!" } : { ...s, teamDmg: 20, blessing: "Something pulls back. You escape, but the party loses 20 HP." } }, b: { label: "Leave it", fn: s => ({ ...s, blessing: "Some treasures are bait. You move on, unharmed." }) } },
       { text: "A fen witch offers a bubbling draught from her hut on stilts.", a: { label: "Drink it", fn: s => Math.random() > 0.5 ? { ...s, teamHeal: 40, blessing: "Warmth floods your veins: the party heals 40 HP." } : { ...s, teamDmg: 15, blessing: "It was swamp bile. The party loses 15 HP." } }, b: { label: "Refuse politely", fn: s => ({ ...s, blessing: "She cackles and waves you off. Nothing happens." }) } },
       { text: "Ghost-lights beckon you off the safe path.", a: { label: "Follow the lights", fn: s => Math.random() > 0.5 ? { ...s, embers: s.embers + 3, blessing: "They lead you to a dying flame shard: +3 embers!" } : { ...s, teamDmg: 15, blessing: "A trick of the mire. You stumble through thorns: -15 HP." } }, b: { label: "Stay on the path", fn: s => ({ ...s, gold: s.gold + 10, blessing: "You keep your footing and find a traveler's lost purse: +10 gold." }) } },
+    ],
+  },
+  cave: {
+    id: "cave", name: "The Hollowed Deep", emoji: "🕳️",
+    basics: [
+      E("Cave Spider", "🕷️", 55, 9, 4, 1, 3, 10, 12, 90, 12),
+      E("Glowmoth Swarm", "🪲", 40, 5, 2, 8, 4, 8, 16, 92, 14),
+      E("Bone Stalker", "💀", 65, 10, 5, 2, 4, 12, 6, 88, 10),
+      E("Fungal Sprout", "🍄", 70, 4, 5, 10, 8, 6, 4, 86, 8),
+      E("Echo Specter", "👻", 60, 3, 4, 12, 11, 9, 14, 91, 10),
+      E("Crystal Wraith", "💎", 75, 5, 6, 13, 13, 10, 8, 89, 9),
+      E("Stone Crawler", "🪨", 95, 9, 11, 2, 7, 4, 2, 82, 7),
+      E("Cave Drake", "🐲", 80, 12, 7, 4, 6, 11, 5, 87, 10),
+      E("Shadow Bat", "🦇", 45, 8, 2, 0, 3, 13, 18, 93, 14),
+      E("Deep Worm", "🪱", 100, 8, 9, 3, 7, 5, 3, 84, 8),
+    ],
+    elites: [
+      E("Drake Matron", "🐉", 170, 14, 9, 8, 8, 11, 4, 88, 9),
+      E("Crystal Golem", "💠", 200, 11, 14, 6, 12, 7, 3, 85, 7),
+      E("Pale Stalker", "🦂", 155, 16, 7, 2, 5, 18, 9, 92, 12),
+    ],
+    boss: E("The Hollow Sovereign", "👁️", 280, 13, 9, 12, 10, 14, 6, 91, 9),
+    relics: [
+      { id: "crystalens", name: "Crystal Lens", icon: "🔍", desc: "+12% critical chance", mod: { critFlat: 12 } },
+      { id: "lantern", name: "Spelunker's Lantern", icon: "🏮", desc: "+6 accuracy", mod: { accFlat: 6 } },
+      { id: "quartz", name: "Vein of Quartz", icon: "💠", desc: "Heroes +5 magic defense", mod: { mdefFlat: 5 } },
+      { id: "stalkereye", name: "Stalker's Eye", icon: "👁️", desc: "Heroes +8 evasion", mod: { evaFlat: 8 } },
+      { id: "echocharm", name: "Echoing Charm", icon: "🔔", desc: "Ultimates charge 30% faster", mod: { ultPct: 30 } },
+      { id: "hoard", name: "Glittering Hoard", icon: "✨", desc: "+30% all resources from fights", mod: { allLootPct: 30 } },
+    ],
+    events: [
+      { text: "A vast cavern swallows your torchlight. Something distant echoes back.", a: { label: "Call out", fn: s => Math.random() > 0.5 ? { ...s, atkMod: s.atkMod + 0.15, blessing: "The echo returns as a battle-hymn. +15% attack this run." } : { ...s, teamDmg: 20, blessing: "Something heard you. Sharp claws rake the party from the dark: -20 HP." } }, b: { label: "Pass in silence", fn: s => ({ ...s, blessing: "You creep past. The cavern keeps its secrets." }) } },
+      { text: "A cluster of corrupted crystals pulses with cold light.", a: { label: "Touch the crystal", fn: s => Math.random() > 0.4 ? { ...s, embers: s.embers + 4, blessing: "Power flows in: +4 embers." } : { ...s, teamDmg: 15, blessing: "Frostburn lances through the party: -15 HP." } }, b: { label: "Carefully harvest a shard (10 wood)", needWood: 10, fn: s => s.wood >= 10 ? { ...s, wood: s.wood - 10, embers: s.embers + 2, blessing: "You pry one loose with a wedge: +2 embers (-10 wood)." } : { ...s, blessing: "Not enough wood for a wedge. You leave them be." } } },
+      { text: "A pile of cracked bones surrounds a glinting weapon-hilt.", a: { label: "Take the weapon", fn: s => Math.random() > 0.5 ? { ...s, atkMod: s.atkMod + 0.1, blessing: "A keen blade, marsh-forged: +10% attack this run." } : { ...s, teamDmg: 18, blessing: "The bones rise! You drive them back, but the party loses 18 HP." } }, b: { label: "Burn the pile", fn: s => ({ ...s, wood: Math.max(0, s.wood - 5), blessing: "You salt and burn it. -5 wood spent on cleansing rites." }) } },
+      { text: "A cave-in blocks the way forward.", a: { label: "Dig through (risk injury)", fn: s => ({ ...s, teamDmg: 12, blessing: "Stone cuts and bruises, but you break through: -12 HP." }) }, b: { label: "Detour (costs 15 wood for braces)", needWood: 15, fn: s => s.wood >= 15 ? { ...s, wood: s.wood - 15, blessing: "Solid bracing. The detour is safe (-15 wood)." } : { ...s, teamDmg: 20, blessing: "Not enough wood. The detour collapses: -20 HP." } } },
+      { text: "A grove of pale, glowing mushrooms ripples in unseen wind.", a: { label: "Harvest and brew", fn: s => Math.random() > 0.5 ? { ...s, teamHeal: 35, blessing: "A potent draught. The party heals 35 HP." } : { ...s, teamDmg: 20, blessing: "Worse than poison. The party loses 20 HP." } }, b: { label: "Leave the grove alone", fn: s => ({ ...s, blessing: "Better safe than sorry. You walk wide of the grove." }) } },
+      { text: "A weathered statue of a forgotten god kneels in a side chamber.", a: { label: "Make an offering (15 gold)", needGold: 15, fn: s => ({ ...s, gold: s.gold - 15, atkMod: s.atkMod + 0.12, blessing: "Old eyes stir. +12% attack this run." }) }, b: { label: "Pry loose its gem", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 40, blessing: "A fat gemstone tumbles free: +40 gold." } : { ...s, teamDmg: 18, blessing: "The statue's eyes flare. -18 HP and a curse follows you." } } },
     ],
   },
   forest: {
@@ -127,7 +249,7 @@ const REGIONS = {
       { id: "ironbark", name: "Ironbark Hide", icon: "🛡️", desc: "Heroes +4 defense", mod: { defFlat: 4 } },
       { id: "tanglecharm", name: "Tanglevine Charm", icon: "🌿", desc: "Enemies 15% slower", mod: { enemySpdPct: -15 } },
       { id: "hunterseye", name: "Hunter's Eye", icon: "🎯", desc: "Heroes +8 accuracy", mod: { accFlat: 8 } },
-      { id: "luckyacorn", name: "Lucky Acorn", icon: "🌰", desc: "+30% gold from fights", mod: { goldPct: 30 } },
+      { id: "bounty", name: "Forest Bounty", icon: "🍂", desc: "+30% all resources from fights", mod: { allLootPct: 30 } },
       { id: "mossheart", name: "Moss Heart", icon: "💚", desc: "+40 HP heal after each fight", mod: { healAfterFight: 40 } },
     ],
     events: [
@@ -142,6 +264,9 @@ const REGIONS = {
 };
 
 /* random modifier applied to all enemy encounters after descending deeper */
+const REGION_ORDER = ["marsh", "cave", "forest"];
+const nextRegion = id => REGION_ORDER[REGION_ORDER.indexOf(id) + 1] || null;
+const regionIndexOf = id => Math.max(0, REGION_ORDER.indexOf(id));
 const DESCENT_MODS = [
   { id: "frenzy", name: "Frenzied Umbral", desc: "Enemies attack 25% faster", mod: { enemySpdPct2: 25 } },
   { id: "hardened", name: "Hardened Hides", desc: "Enemies have +30% HP", mod: { enemyHpPct: 30 } },
@@ -301,6 +426,46 @@ const Res = ({ res }) => (
   </div>
 );
 
+/* effective stats — apply every active modifier so tooltips show what
+   actually goes into combat math, not just base values */
+function effectiveHero(h, r, b) {
+  if (!h) return h;
+  const ag = aggRelics(r?.relics || []);
+  const dm = r?.modifier?.mod || {};
+  const tick = b?.tick || 0;
+  const atkMul = (1 + (r?.atkMod || 0)) * (1 + (ag.atkPct || 0) / 100);
+  const accAdj = (ag.accFlat || 0) + (dm.heroAccFlat || 0);
+  const defAdj = ag.defFlat || 0;
+  const spdMul = 1 + (ag.spdPct || 0) / 100;
+  const hasteOn = b && h.id === "rang" && tick < (b.hasteUntil || 0);
+  const tauntOn = b && h.id === "bran" && tick < (b.tauntUntil || 0);
+  return {
+    ...h,
+    atk: Math.round(h.atk * atkMul),
+    matk: Math.round(h.matk * atkMul),
+    def: Math.round((h.def + defAdj) * (tauntOn ? 2 : 1)),
+    mdef: Math.round((h.mdef + (ag.mdefFlat || 0)) * (tauntOn ? 2 : 1)),
+    crit: h.crit + (ag.critFlat || 0),
+    eva: h.eva + (ag.evaFlat || 0),
+    acc: h.acc + accAdj,
+    spd: Math.round(h.spd * spdMul * (hasteOn ? 1.6 : 1)),
+  };
+}
+function effectiveEnemy(e, r, b) {
+  if (!e) return e;
+  const ag = aggRelics(r?.relics || []);
+  const tick = b?.tick || 0;
+  const atkMul = 1 + (ag.enemyAtkPct || 0) / 100;
+  const spdMul = 1 + (ag.enemySpdPct || 0) / 100;
+  const slowed = b && e.key === b.slowedKey && tick < (b.slowUntil || 0);
+  return {
+    ...e,
+    atk: Math.round(e.atk * atkMul),
+    matk: Math.round(e.matk * atkMul),
+    spd: Math.round(e.spd * spdMul * (slowed ? 0.5 : 1)),
+  };
+}
+
 const STAT_ROWS = [
   ["HP", u => `${u.hp ?? u.maxHp}/${u.maxHp}`],
   ["Attack", u => u.atk],
@@ -347,27 +512,47 @@ function StatCard({ unit, idKey, pinned, setPinned, hovered, setHovered, childre
 /* ================= MAIN ================= */
 export default function Emberhold() {
   /* persistent (saved to localStorage) */
-  const [screen, setScreen] = useState("base");
   const [res, setRes] = usePersistent("res", { gold: 100, wood: 60, embers: 4 });
   const [bld, setBld] = usePersistent("bld", { forge: 1, barracks: 1, arcanum: 1, shard: 1 });
   const [runsDone, setRunsDone] = usePersistent("runsDone", 0);
   const [forestUnlocked, setForestUnlocked] = usePersistent("forestUnlocked", false);
+  const [caveUnlocked, setCaveUnlocked] = usePersistent("caveUnlocked", false);
   const [items, setItems] = usePersistent("items", []);
   const [equips, setEquips] = usePersistent("equips", {});
   const [party, setParty] = usePersistent("party", ["bran", "kael", "syra"]);
   const [equipPicker, setEquipPicker] = useState(null);
 
-  /* run state */
-  const [run, setRun] = useState(null);
+  /* run state (persisted so reloading doesn't reset the map). Battle state is
+     intentionally NOT persisted — reloading mid-combat just resumes the fight
+     from the map. */
+  const [screen, setScreenRaw] = usePersistent("screen", "base");
+  const [run, setRunRaw] = usePersistent("run", null);
+  const setScreen = s => { setScreenRaw(s); };
+  const setRun = r => { setRunRaw(r); };
   const [battle, setBattle] = useState(null);
-  const [pendingRelics, setPendingRelics] = useState(null);
-  const [eventCard, setEventCard] = useState(null);
-  const [eventResult, setEventResult] = useState(null);
-  const [summary, setSummary] = useState(null);
+  const [pendingRelics, setPendingRelics] = usePersistent("pendingRelics", null);
+  const [eventCard, setEventCard] = usePersistent("eventCard", null);
+  const [eventResult, setEventResult] = usePersistent("eventResult", null);
+  const [summary, setSummary] = usePersistent("summary", null);
+  const [combatReview, setCombatReview] = usePersistent("combatReview", null);
   const [floats, setFloats] = useState([]);
   const [legendOpen, setLegendOpen] = useState(true);
   const [pinned, setPinned] = useState(null);
   const [hovered, setHovered] = useState(null);
+  const [showMap, setShowMap] = useState(false);
+  const [musicOn, setMusicOn] = usePersistent("musicOn", false);
+  const [musicVol, setMusicVol] = usePersistent("musicVol", 0.5);
+
+  useEffect(() => { MUSIC.setVolume(musicVol); }, [musicVol]);
+  useEffect(() => {
+    MUSIC.setEnabled(musicOn);
+    if (!musicOn) return;
+    const track =
+      screen === "base" ? "hold" :
+      screen === "battle" ? "combat" :
+      "umbral";
+    MUSIC.play(track);
+  }, [screen, musicOn]);
 
   const BUILDINGS = [
     { id: "forge", name: "Forge", icon: "⚒️", desc: "+12% hero attack & magic attack / depth", cost: l => ({ gold: 60 * l, wood: 30 * l }) },
@@ -407,6 +592,7 @@ export default function Emberhold() {
       regionId: "marsh", modifier: null, drops: [],
       grid: makeRunGrid(), pos: null, visited: [],
       heroes, gold: 0, wood: 0, embers: 0, relics: [], atkMod: 0, phoenixUsed: false,
+      corruptionBaseline: 0,
     });
     setScreen("map");
   };
@@ -425,6 +611,7 @@ export default function Emberhold() {
 
   const chooseNode = cand => {
     setPinned(null);
+    setShowMap(false);
     const r = runRef.current;
     const type = cand.boss ? "boss" : cand.converge ? "waygate" : r.grid[cand.row][cand.col];
     /* backup guard: never allow a relic pick immediately after a relic pick */
@@ -441,7 +628,7 @@ export default function Emberhold() {
     } else if (type === "shrine") {
       const pool = REGIONS[r2.regionId].relics.filter(x => !r2.relics.find(y => y.id === x.id));
       const opts = [];
-      while (opts.length < Math.min(2, pool.length)) { const x = rnd(pool); if (!opts.includes(x)) opts.push(x); }
+      while (opts.length < Math.min(3, pool.length)) { const x = rnd(pool); if (!opts.includes(x)) opts.push(x); }
       setPendingRelics(opts); setScreen("relic");
     } else if (type === "event") {
       setEventCard(rnd(REGIONS[r2.regionId].events)); setScreen("event");
@@ -501,7 +688,7 @@ export default function Emberhold() {
           const t = focusTarget();
           if (t) {
             if (rollHit({ ...h, acc: h.acc + accAdj }, t)) {
-              const { dmg, crit } = rollDamage({ ...h, atk: Math.round(h.atk * atkMul), matk: Math.round(h.matk * atkMul) }, t, 1);
+              const { dmg, crit } = rollDamage({ ...h, atk: Math.round(h.atk * atkMul), matk: Math.round(h.matk * atkMul), crit: h.crit + (ag.critFlat || 0) }, t, 1);
               t.hp -= dmg;
               if (crit) addFloat(`CRIT -${dmg}`, C.gold);
             } else addFloat("MISS", C.dim);
@@ -519,7 +706,7 @@ export default function Emberhold() {
           if (!live.length) return;
           const bran = heroes.find(h => h.id === "bran" && h.alive);
           const t = (tick < b.tauntUntil && bran) ? bran : rnd(live);
-          const td = { ...t, def: t.def + defAdj };
+          const td = { ...t, def: t.def + defAdj, mdef: t.mdef + (ag.mdefFlat || 0), eva: t.eva + (ag.evaFlat || 0) };
           if (t.id === "bran" && tick < b.tauntUntil) { td.def *= 2; td.mdef *= 2; } /* Taunt doubles his defenses */
           if (rollHit(e, td)) {
             const { dmg, crit } = rollDamage({ ...e, atk: Math.round(e.atk * eAtkMul), matk: Math.round(e.matk * eAtkMul) }, td, 1);
@@ -539,7 +726,7 @@ export default function Emberhold() {
             if (live.length) {
               const bran = heroes.find(h => h.id === "bran" && h.alive);
               const t = (tick < b.tauntUntil && bran) ? bran : rnd(live);
-              const td = { ...t, def: t.def + defAdj };
+              const td = { ...t, def: t.def + defAdj, mdef: t.mdef + (ag.mdefFlat || 0), eva: t.eva + (ag.evaFlat || 0) };
               if (t.id === "bran" && tick < b.tauntUntil) { td.def *= 2; td.mdef *= 2; } /* Taunt doubles his defenses */
               const { dmg: raw } = rollDamage({ ...src, atk: Math.round(src.atk * eAtkMul), matk: Math.round(src.matk * eAtkMul), crit: 0 }, td, 3);
               const dmg = surge.braced ? Math.round(raw * 0.3) : raw;
@@ -573,9 +760,9 @@ export default function Emberhold() {
       const lost = heroes.every(h => !h.alive);
 
       setRun({ ...r, heroes, phoenixUsed });
-      setBattle({ ...b, enemies, log: log.slice(-3), surge, tick });
+      setBattle({ ...b, enemies, log, surge, tick });
 
-      if (won) { clearInterval(iv); winFight({ ...r, heroes, phoenixUsed }, heroes, b.type); }
+      if (won) { clearInterval(iv); winFight({ ...r, heroes, phoenixUsed }, heroes, b.type, log); }
       else if (lost) { clearInterval(iv); finishRun({ ...r, heroes }, false); }
     }, TICK_MS);
     return () => clearInterval(iv);
@@ -643,28 +830,42 @@ export default function Emberhold() {
       const t = enemies.find(e => e.key === b.focus && e.hp > 0) || live[0];
       if (t) {
         slowedKey = t.key; slowUntil = b.tick + Math.round(16 * ultScale);
-        log.push(`🌿 Entangle! ${t.name} slowed 50%`); addFloat("🌿 SLOW", C.umbral);
+        const dmg = Math.round(15 * ultScale);
+        const targetIdx = enemies.findIndex(e => e.key === t.key);
+        enemies[targetIdx] = { ...enemies[targetIdx], hp: Math.max(0, enemies[targetIdx].hp - dmg) };
+        const heal = Math.round(15 * ultScale);
+        const livingHeroes = heroes.map((h, i) => ({ h, i })).filter(x => x.h.alive);
+        if (livingHeroes.length) {
+          const lowest = livingHeroes.reduce((a, c) => (c.h.hp / c.h.maxHp) < (a.h.hp / a.h.maxHp) ? c : a);
+          heroes[lowest.i] = { ...heroes[lowest.i], hp: Math.min(heroes[lowest.i].maxHp, heroes[lowest.i].hp + heal) };
+          log.push(`🌿 Wildkin Bloom! ${t.name} -${dmg} & slowed · ${heroes[lowest.i].name} +${heal} HP`);
+          addFloat(`-${dmg} 🌿`, C.green);
+        }
       }
     }
 
     heroes[i] = { ...heroes[i], ult: 0 };
     setRun({ ...r, heroes });
-    setBattle({ ...b, enemies, log: log.slice(-3), tauntUntil, hasteUntil, slowUntil, slowedKey });
+    setBattle({ ...b, enemies, log, tauntUntil, hasteUntil, slowUntil, slowedKey });
   };
 
-  const winFight = (r, heroes, type) => {
+  const winFight = (r, heroes, type, fullLog) => {
     const depth = depthOf(r);
     const ag = aggRelics(r.relics);
-    const regionMul = r.regionId === "forest" ? 1.6 : 1;
+    const regionMul = 1 + regionIndexOf(r.regionId) * 0.3; // marsh 1.0, cave 1.3, forest 1.6
     const mult = (type === "boss" ? 4 : type === "elite" ? 2 : 1) * (1 + 0.1 * (bld.shard - 1)) * regionMul;
     const goldMul = 1 + (ag.goldPct || 0) / 100;
+    const allMul = 1 + (ag.allLootPct || 0) / 100;
     let hs = heroes;
     if (ag.healAfterFight) hs = hs.map(h => h.alive ? { ...h, hp: Math.min(h.maxHp, h.hp + ag.healAfterFight) } : h);
+    const goldGain = Math.round((20 + depth * 8) * mult * goldMul * allMul);
+    const woodGain = Math.round((10 + depth * 4) * mult * allMul);
+    const emberGain = Math.round(((type === "boss" ? 8 : type === "elite" ? 2 : Math.random() > 0.6 ? 1 : 0)) * allMul);
     let r2 = {
       ...r, heroes: hs,
-      gold: r.gold + Math.round((20 + depth * 8) * mult * goldMul),
-      wood: r.wood + Math.round((10 + depth * 4) * mult),
-      embers: r.embers + (type === "boss" ? 8 : type === "elite" ? 2 : Math.random() > 0.6 ? 1 : 0),
+      gold: r.gold + goldGain,
+      wood: r.wood + woodGain,
+      embers: r.embers + emberGain,
     };
     setBattle(null);
 
@@ -674,24 +875,25 @@ export default function Emberhold() {
       const uid = Math.random().toString(36).slice(2);
       setItems(p => [...p, { uid, id: drop.id }]);
       r2 = { ...r2, drops: [...r2.drops, { ...drop, uid }] };
-      if (r2.regionId === "marsh") {
-        if (!forestUnlocked) setForestUnlocked(true);
-        setRun(r2);
-        setScreen("descend");
-        return;
-      }
-      finishRun(r2, true, true);
-      return;
     }
-    backToMap(r2);
+    setRun(r2);
+    setCombatReview({
+      type, log: fullLog || [], gained: { gold: goldGain, wood: woodGain, embers: emberGain },
+      bossKill: type === "boss", regionId: r2.regionId,
+    });
+    setScreen("combatReview");
   };
 
-  /* descend deeper into the Ogre Forest with a random modifier */
+  /* descend deeper to the next region with a fresh random modifier;
+     1/3 of current corruption carries over as the next region's baseline */
   const descend = () => {
     const r = runRef.current;
+    const nxt = nextRegion(r.regionId);
+    if (!nxt) return;
     const m = rnd(DESCENT_MODS);
     const heroes = r.heroes.map(h => h.alive ? { ...h, hp: Math.min(h.maxHp, h.hp + Math.round(h.maxHp * 0.3)), gauge: 0, ult: 0 } : h);
-    setRun({ ...r, regionId: "forest", modifier: m, grid: makeRunGrid(), pos: null, visited: [], heroes });
+    const carriedBaseline = corruption / 3;
+    setRun({ ...r, regionId: nxt, modifier: m, grid: makeRunGrid(), pos: null, visited: [], heroes, corruptionBaseline: carriedBaseline });
     setScreen("modifier");
   };
 
@@ -745,11 +947,75 @@ export default function Emberhold() {
     setParty(p => p.includes(id) ? p.filter(x => x !== id) : p.length < 3 ? [...p, id] : p);
   };
 
+  /* if we reloaded into the battle screen but the in-memory battle object is
+     gone, gracefully resume into the map */
+  useEffect(() => {
+    if (screen === "battle" && !battle && run) setScreen("map");
+  }, [screen, battle, run]);
+
   /* ---------- render ---------- */
-  const corruption = run ? ((depthOf(run) + 1) / (COLS + 2)) * (run.regionId === "forest" ? 1 : 0.6) : 0;
+  /* corruption: starts at the carried-over baseline (1/3 of prior region's
+     value), then per-encounter rate doubles for each region descended into.
+     Marsh ~5%/depth, cave ~10%/depth, forest ~20%/depth. */
+  const corruption = run
+    ? (run.corruptionBaseline || 0) + ((depthOf(run) + 1) / (COLS + 2)) * 0.5 * (2 ** regionIndexOf(run.regionId))
+    : 0;
+  const corruptionVisual = Math.min(1, corruption);
   const glow = run
-    ? `radial-gradient(ellipse 90% 55% at 50% -10%, rgba(67,197,178,${0.10 + corruption * 0.25}), transparent 60%)`
+    ? `radial-gradient(ellipse 90% 55% at 50% -10%, rgba(67,197,178,${0.10 + corruptionVisual * 0.25}), transparent 60%)`
     : `radial-gradient(ellipse 90% 55% at 50% -10%, rgba(240,140,58,.22), transparent 60%)`;
+
+  const MapPeek = ({ r }) => {
+    const icons = { fight: "⚔️", elite: "👹", event: "❓", shrine: "✨", waygate: "🌀" };
+    const bossIcon = REGIONS[r.regionId].boss.icon;
+    const here = r.pos;
+    const SZ = 30;
+    return (
+      <div style={{ overflowX: "auto", marginBottom: 6 }}>
+        <div style={{
+          display: "grid", gap: 4, justifyContent: "center",
+          gridTemplateColumns: `repeat(${COLS + 2}, ${SZ}px)`,
+          gridTemplateRows: `repeat(3, ${SZ}px)`,
+          minWidth: (SZ + 4) * (COLS + 2),
+        }}>
+          {r.grid.map((rowArr, r2) => rowArr.map((t, c2) => {
+            if (!t) return null;
+            const isHere = here && !here.boss && !here.converge && here.row === r2 && here.col === c2;
+            const was = r.visited.includes(`${r2}-${c2}`);
+            return (
+              <div key={`${r2}-${c2}`} style={{
+                gridRow: r2 + 1, gridColumn: c2 + 1,
+                borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
+                background: isHere ? C.ember : was ? "#1c1628" : C.panel,
+                opacity: was ? 0.35 : 1,
+                border: isHere ? `2px solid ${C.gold}` : `1px solid ${C.panel2}`,
+              }}>{icons[t]}</div>
+            );
+          }))}
+          <div style={{
+            gridRow: 2, gridColumn: COLS + 1, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15,
+            background: here?.converge ? C.ember : C.panel, border: `1px solid ${C.umbral}55`,
+          }}>🌀</div>
+          <div style={{
+            gridRow: 2, gridColumn: COLS + 2, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15,
+            background: here?.boss ? C.ember : C.panel, border: `1px solid ${C.red}55`,
+          }}>{bossIcon}</div>
+        </div>
+      </div>
+    );
+  };
+
+  const MapToggle = ({ r }) => (
+    <div style={{ marginBottom: 12 }}>
+      <div onClick={() => setShowMap(s => !s)} style={{
+        background: C.panel2, borderRadius: 8, padding: "6px 12px", textAlign: "center",
+        cursor: "pointer", fontSize: 12, color: C.dim, border: `1px solid ${C.panel2}`,
+      }}>
+        {showMap ? "▲ Hide path" : "👁 Show path"}
+      </div>
+      {showMap && <div style={{ marginTop: 8 }}><MapPeek r={r} /></div>}
+    </div>
+  );
 
   const Shell = ({ children, title, sub }) => (
     <div style={{ minHeight: "100vh", background: `${glow}, ${C.bg}`, color: C.text, fontFamily: "'Alegreya Sans',sans-serif", maxWidth: 480, margin: "0 auto", padding: "20px 16px 32px", position: "relative" }}>
@@ -759,7 +1025,7 @@ export default function Emberhold() {
         @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
         @keyframes glowPulse { 0%,100%{box-shadow:0 0 5px ${C.gold}44} 50%{box-shadow:0 0 14px ${C.gold}aa} }
       `}</style>
-      <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 900, fontSize: 13, letterSpacing: 4, color: run ? C.umbral : C.ember, textAlign: "center" }}>EMBERHOLD</div>
+      <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 900, fontSize: 13, letterSpacing: 4, color: run ? C.umbral : C.ember, textAlign: "center" }}>EMBERHOLD <span style={{ color: C.dim, fontWeight: 400, letterSpacing: 1, fontSize: 10 }}>v{VERSION}</span></div>
       {title && <h1 style={{ fontFamily: "'Cinzel',serif", fontSize: 24, fontWeight: 700, textAlign: "center", margin: "10px 0 2px" }}>{title}</h1>}
       {sub && <div style={{ textAlign: "center", color: C.dim, fontSize: 13, marginBottom: 14 }}>{sub}</div>}
       {children}
@@ -775,7 +1041,7 @@ export default function Emberhold() {
   if (screen === "base") {
     const heroes = heroStats();
     return (
-      <Shell title="Your Hold" sub={`The Worldflame burns. Expeditions: ${runsDone}${forestUnlocked ? " · 🌲 Ogre Forest unlocked" : ""}`}>
+      <Shell title="Your Hold" sub={`The Worldflame burns. Expeditions: ${runsDone}${caveUnlocked ? " · 🕳️ Deep" : ""}${forestUnlocked ? " · 🌲 Forest" : ""}`}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><Res res={res} /></div>
         <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
           {BUILDINGS.map(b => {
@@ -851,7 +1117,10 @@ export default function Emberhold() {
         <Btn full disabled={party.length !== 3} onClick={startRun}>
           {party.length === 3 ? "🌫️ Venture into the Forgotten Marshland" : `Select ${3 - party.length} more hero${3 - party.length === 1 ? "" : "es"}`}
         </Btn>
-        <div style={{ textAlign: "center", marginTop: 14 }}>
+        <div style={{ textAlign: "center", marginTop: 14, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+          <button onClick={() => setMusicOn(v => !v)} style={{ background: "transparent", color: musicOn ? C.ember : C.dim, border: `1px solid ${musicOn ? C.ember + "66" : C.panel2}`, borderRadius: 8, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif" }}>
+            {musicOn ? "🎵 Music On" : "🔇 Music Off"}
+          </button>
           <button onClick={() => {
             if (confirm("Reset your Hold? This wipes all progress (resources, buildings, items, unlocks) and cannot be undone.")) {
               clearSave(); location.reload();
@@ -860,6 +1129,15 @@ export default function Emberhold() {
             ⚠️ Reset Hold (wipes save)
           </button>
         </div>
+        {musicOn && (
+          <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center", justifyContent: "center" }}>
+            <span style={{ fontSize: 11, color: C.dim }}>🔈</span>
+            <input type="range" min="0" max="1" step="0.05" value={musicVol}
+              onChange={e => setMusicVol(parseFloat(e.target.value))}
+              style={{ width: 160, accentColor: C.ember, cursor: "pointer" }} />
+            <span style={{ fontSize: 11, color: C.dim, minWidth: 32, textAlign: "right" }}>{Math.round(musicVol * 100)}%</span>
+          </div>
+        )}
       </Shell>
     );
   }
@@ -996,7 +1274,7 @@ export default function Emberhold() {
             const focused = battle.focus === e.key && e.hp > 0;
             const isSurger = battle.surge?.enemyKey === e.key;
             return (
-              <StatCard key={e.key} unit={e} idKey={e.key} dir="down" clickOnly pinned={pinned} setPinned={setPinned} hovered={hovered} setHovered={setHovered}
+              <StatCard key={e.key} unit={effectiveEnemy(e, run, battle)} idKey={e.key} dir="down" clickOnly pinned={pinned} setPinned={setPinned} hovered={hovered} setHovered={setHovered}
                 onClick={() => setFocus(e.key)}
                 style={{
                   background: C.panel, borderRadius: 12, padding: 10, width: 96, textAlign: "center",
@@ -1020,7 +1298,7 @@ export default function Emberhold() {
         <div style={{ minHeight: 18, textAlign: "center", fontSize: 12, marginBottom: 4 }}>
           {tauntOn && <span style={{ color: C.blue, marginRight: 10 }}>🛡️ Taunt active</span>}
           {hasteOn && <span style={{ color: C.blue, marginRight: 10 }}>🏹 Fenwick hasted</span>}
-          {slowOn && <span style={{ color: C.umbral }}>🌿 {battle.enemies.find(e => e.key === battle.slowedKey)?.name || "Enemy"} entangled</span>}
+          {slowOn && <span style={{ color: C.umbral }}>🌿 {battle.enemies.find(e => e.key === battle.slowedKey)?.name || "Enemy"} blooming</span>}
         </div>
 
         {/* Fight! (inline) */}
@@ -1048,7 +1326,7 @@ export default function Emberhold() {
         )}
 
         <div style={{ minHeight: 48, textAlign: "center", fontSize: 13, color: C.gold, marginBottom: 8 }}>
-          {battle.log.map((l, i) => <div key={i}>{l}</div>)}
+          {battle.log.slice(-3).map((l, i) => <div key={i}>{l}</div>)}
         </div>
 
         {/* heroes: HP bar, attack gauge bar, ult bar + button */}
@@ -1056,7 +1334,7 @@ export default function Emberhold() {
           {run.heroes.map((h, i) => {
             const ready = battle.started && h.alive && h.ult >= 100;
             return (
-              <StatCard key={h.id} unit={h} idKey={`b-${h.id}`} clickOnly pinned={pinned} setPinned={setPinned} hovered={hovered} setHovered={setHovered}
+              <StatCard key={h.id} unit={effectiveHero(h, run, battle)} idKey={`b-${h.id}`} clickOnly pinned={pinned} setPinned={setPinned} hovered={hovered} setHovered={setHovered}
                 style={{
                   background: C.panel, borderRadius: 12, padding: 10, width: 106, textAlign: "center",
                   opacity: h.alive ? 1 : 0.3, border: `1px solid ${h.id === "bran" && tauntOn ? C.blue : C.panel2}`,
@@ -1088,6 +1366,7 @@ export default function Emberhold() {
   /* RELIC pick */
   if (screen === "relic" && pendingRelics && run) return (
     <Shell title="A Shrine Hums" sub="Choose one relic — it lasts only this run">
+      <MapToggle r={run} />
       <div style={{ display: "grid", gap: 12, marginTop: 10 }}>
         {pendingRelics.map(r => (
           <div key={r.id} onClick={() => { const r2 = { ...run, relics: [...run.relics, r] }; setPendingRelics(null); backToMap(r2); }}
@@ -1112,6 +1391,7 @@ export default function Emberhold() {
     };
     return (
       <Shell title="A Strange Encounter">
+        <MapToggle r={run} />
         <div style={{ background: C.panel, borderRadius: 14, padding: 18, fontSize: 15, lineHeight: 1.6, marginBottom: 16, fontStyle: "italic", border: `1px solid ${C.panel2}` }}>
           “{eventCard.text}”
         </div>
@@ -1128,6 +1408,7 @@ export default function Emberhold() {
     const good = !/loses|Burned|Ambushed|-\d+ HP|snaps|bile|bruises|swats/i.test(eventResult.text);
     return (
       <Shell title={good ? "Fortune Smiles" : "A Costly Choice"}>
+        {eventResult.run && <MapToggle r={eventResult.run} />}
         <div style={{ background: C.panel, borderRadius: 14, padding: 20, textAlign: "center", margin: "10px 0 16px", border: `1px solid ${good ? C.umbral : C.red}55` }}>
           <div style={{ fontSize: 34, marginBottom: 10 }}>{good ? "🌟" : "💢"}</div>
           <div style={{ fontSize: 15, lineHeight: 1.6 }}>{eventResult.text}</div>
@@ -1144,6 +1425,7 @@ export default function Emberhold() {
     return (
       <Shell title={isConverge ? "🌀 The Last Waygate" : "🌀 A Waygate"}
         sub={isConverge ? `Every path leads here. Beyond this gate, only ${region.boss.name} remains.` : "A shimmering door home. Beyond it, the dark deepens."}>
+        <MapToggle r={run} />
         <div style={{ background: C.panel, borderRadius: 14, padding: 16, textAlign: "center", marginBottom: 16, border: `1px solid ${C.umbral}55` }}>
           <div style={{ fontSize: 13, color: C.green, marginBottom: 8 }}>✨ The gate's light mends the party: +30% HP, and the fallen rise again at 20%.</div>
           <div style={{ fontSize: 13, color: C.dim, marginBottom: 6 }}>Loot secured if you extract now</div>
@@ -1153,16 +1435,67 @@ export default function Emberhold() {
         </div>
         <div style={{ display: "grid", gap: 10 }}>
           <Btn full color={C.umbral} onClick={() => finishRun(run, true)}>🏠 Extract — keep everything</Btn>
-          <Btn full onClick={() => backToMap()}>{isConverge ? `${region.boss.icon} Face ${region.boss.name}` : "⚔️ Continue — greater rewards ahead"}</Btn>
+          <Btn full onClick={() => isConverge ? chooseNode({ boss: true }) : backToMap()}>{isConverge ? `${region.boss.icon} Face ${region.boss.name}` : "⚔️ Continue — greater rewards ahead"}</Btn>
         </div>
       </Shell>
     );
   }
 
-  /* DESCEND — after killing the Marshland boss */
-  if (screen === "descend" && run) {
+  /* COMBAT REVIEW — shown after every victorious fight */
+  if (screen === "combatReview" && combatReview && run) {
+    const cr = combatReview;
+    const title = cr.bossKill ? "🏆 Boss Slain!" : cr.type === "elite" ? "Elite Vanquished" : "Foes Routed";
+    const proceed = () => {
+      setCombatReview(null);
+      if (cr.bossKill) {
+        const nxt = nextRegion(run.regionId);
+        if (nxt) {
+          if (nxt === "cave" && !caveUnlocked) setCaveUnlocked(true);
+          if (nxt === "forest" && !forestUnlocked) setForestUnlocked(true);
+          setScreen("descend");
+        } else {
+          finishRun(run, true, true);
+        }
+      } else {
+        backToMap();
+      }
+    };
     return (
-      <Shell title="The Herald Falls!" sub="Behind its corpse, the marsh floor splits open — a rift descending into deeper Umbral.">
+      <Shell title={title} sub="Review the battle, then continue your expedition">
+        <div style={{ background: C.panel, borderRadius: 14, padding: 16, marginBottom: 14, border: `1px solid ${C.panel2}`, textAlign: "center" }}>
+          <div style={{ fontSize: 12, color: C.dim, marginBottom: 6 }}>RESOURCES GAINED</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>
+            🪙 +{cr.gained.gold} &nbsp; 🪵 +{cr.gained.wood} &nbsp; ✨ +{cr.gained.embers}
+          </div>
+        </div>
+        <div style={{ background: C.panel, borderRadius: 14, padding: 12, marginBottom: 14, border: `1px solid ${C.panel2}` }}>
+          <div style={{ fontSize: 12, color: C.dim, marginBottom: 8, fontWeight: 700, letterSpacing: 1 }}>COMBAT LOG</div>
+          <div style={{ maxHeight: 260, overflowY: "auto", fontSize: 12, lineHeight: 1.6 }}>
+            {cr.log.length === 0 && <div style={{ color: C.dim }}>No notable events.</div>}
+            {cr.log.map((l, i) => (
+              <div key={i} style={{ color: i % 2 ? C.text : C.dim, padding: "1px 4px" }}>{l}</div>
+            ))}
+          </div>
+        </div>
+        <Btn full onClick={proceed}>{cr.bossKill && nextRegion(run.regionId) ? `${REGIONS[nextRegion(run.regionId)].emoji} Continue ▸` : cr.bossKill ? "🏠 Return Home ▸" : "🗺️ Back to the path ▸"}</Btn>
+      </Shell>
+    );
+  }
+
+  /* DESCEND — after killing a region boss with a next region available */
+  if (screen === "descend" && run) {
+    const nxt = nextRegion(run.regionId);
+    const curr = REGIONS[run.regionId];
+    const nxtReg = nxt ? REGIONS[nxt] : null;
+    const titleByRegion = { marsh: "The Herald Falls!", cave: "The Hollow Sovereign Falls!" };
+    const subByRegion = {
+      marsh: "Behind its corpse, the marsh floor splits open — a rift descending into deeper Umbral.",
+      cave: "The Sovereign's gaze breaks. Beyond, ancient roots tangle into a dimming forest.",
+    };
+    if (!nxtReg) { finishRun(run, true, true); return null; }
+    return (
+      <Shell title={titleByRegion[run.regionId] || `${curr.name} cleared!`}
+        sub={subByRegion[run.regionId] || "A deeper region opens before you."}>
         <div style={{ background: C.panel, borderRadius: 14, padding: 16, marginBottom: 14, border: `1px solid ${C.gold}55` }}>
           <div style={{ fontSize: 13, color: C.dim, marginBottom: 6, textAlign: "center" }}>Equipment claimed — equip it now, before going deeper:</div>
           {run.drops.map(d => (
@@ -1171,7 +1504,7 @@ export default function Emberhold() {
               {d.equippedTo ? (
                 <div style={{ fontSize: 12, color: C.umbral, textAlign: "center", marginTop: 4 }}>✓ Equipped to {HERO_DEFS.find(x => x.id === d.equippedTo)?.name}</div>
               ) : (
-                <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 6 }}>
+                <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 6, flexWrap: "wrap" }}>
                   {run.heroes.map(h => (
                     <button key={h.id} onClick={() => equipToRunHero(h.id, d)} style={{
                       background: C.panel2, color: C.text, border: `1px solid ${C.gold}44`, borderRadius: 8,
@@ -1185,16 +1518,16 @@ export default function Emberhold() {
           <div style={{ fontSize: 13, color: C.gold, marginTop: 8, textAlign: "center" }}>Current loot: 🪙{run.gold} 🪵{run.wood} ✨{run.embers}</div>
         </div>
         <div style={{ background: "#1a2420", borderRadius: 14, padding: 16, marginBottom: 16, border: `1px solid ${C.umbral}66` }}>
-          <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 700, color: C.umbral, marginBottom: 6 }}>🌲 The Ogre Forest beckons</div>
+          <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 700, color: C.umbral, marginBottom: 6 }}>{nxtReg.emoji} {nxtReg.name} beckons</div>
           <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.6 }}>
-            Descend to face the Ogre King — stronger foes, 60% richer loot, and a second equipment drop.
+            Descend to face <b>{nxtReg.boss.name}</b> — stronger foes, richer loot, another equipment drop.
             The party recovers 30% HP on descent, but a <span style={{ color: C.red }}>random Umbral modifier</span> will
-            empower all remaining enemy encounters this expedition. If you fall, half your loot is lost.
+            empower all remaining enemy encounters in this new region. Corruption already accelerates here — its rate doubles each region.
           </div>
         </div>
         <div style={{ display: "grid", gap: 10 }}>
           <Btn full color={C.umbral} onClick={() => finishRun(run, true, true)}>🏠 Extract — return victorious</Btn>
-          <Btn full onClick={descend}>🌲 Descend into the Ogre Forest</Btn>
+          <Btn full onClick={descend}>{nxtReg.emoji} Descend into {nxtReg.name}</Btn>
         </div>
       </Shell>
     );
@@ -1209,7 +1542,7 @@ export default function Emberhold() {
         <div style={{ fontSize: 14, color: C.text, marginTop: 6 }}>{run.modifier.desc}</div>
         <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>Applies to all enemy encounters for the rest of this expedition.</div>
       </div>
-      <Btn full onClick={() => setScreen("map")}>🌲 Enter the Ogre Forest</Btn>
+      <Btn full onClick={() => setScreen("map")}>{REGIONS[run.regionId].emoji} Enter {REGIONS[run.regionId].name}</Btn>
     </Shell>
   );
 
