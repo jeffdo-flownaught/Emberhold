@@ -1,19 +1,41 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-/* ============ EMBERHOLD 0.013 — playable prototype ============
-   New in 0.013:
-   • Version numbers now display as 0.NNN. v13 = 0.013.
-   • New region: THE HOLLOWED DEEP — between the Marshland and
-     the Ogre Forest. 10 basics, 3 elites, boss (Hollow
-     Sovereign), 6 relics, 6 events. Random descent modifier
-     rolls when entering it, just like the forest.
-   • Region progression now: marsh → cave → forest. Beating
-     each region's boss unlocks descent to the next.
-   • Corruption math reworked: 1/3 of corruption carries over
-     to the next region as a baseline, and the per-encounter
-     accumulation rate DOUBLES each region (marsh 5%/depth,
-     cave 10%/depth, forest 20%/depth). Late forest pushes
-     genuinely feel terminal.
+/* ============ EMBERHOLD 0.021 — playable prototype ============
+   New in 0.021:
+   • Ogre Forest region power reduced 3× → 2.5× (simulation
+     showed the 2×→3× jump made the forest a 40-expedition
+     tier; 2.5× brings it in line with the cave tier).
+
+   ============ previous: 0.020 ============
+   New in 0.020 (pacing rebalance, simulation-tuned):
+   • REGION POWER: enemies multiply by region position — marsh
+     1×, cave 2×, forest 3× (region 4 will be 4×). Each region
+     is a real difficulty tier; the game gets harder as you go.
+   • Depth scaling softened 0.15 → 0.10 per depth (removes the
+     early marsh depth-6/7 wipe wall).
+   • Region loot greatly increased: marsh 1×, cave 2.5×,
+     forest 4× — funding the climb to the next tier.
+   • Forge cost reduced 60 → 45 gold per level.
+   • tools/simulate.js — rerunnable campaign simulator.
+
+   ============ previous: 0.019 ============
+   New in 0.019:
+   • Descent modifiers STACK — cave's modifier stays active in
+     the forest alongside the new one; all show in active
+     effects and the map subtitle. (Bug fix: the 2nd modifier
+     used to overwrite the 1st.)
+   • Equipment reworked: each region's boss drops from its own
+     2-item pool, every item has exactly one modifier (upgrade
+     system coming later to add a second). Marsh: Blade/Aegis,
+     Cave: Eye/Band, Forest: Amulet/Boots. Cache when full.
+   • Party panel ult % no longer shows decimals.
+   • Relic tuning: Ashen Fang +15% (was 25), Hourglass of Sol
+     20% (was 40), Echoing Charm 15% (was 30), Ember Caravan
+     15% (was 30), Forest Bounty 20% (was 30), Ember Chalice
+     +20 HP (was 30), Moss Heart +30 HP (was 40).
+   • The Ogre King now fights alongside a Twin-head Ogre.
+   • Realms: Marsh, Cave, and Forest belong to the Earthen
+     Realm. More realms will unlock beyond the final boss.
    Carried from v6: two regions (Forgotten Marshland → Ogre
    Forest), descent modifiers, attack-speed gauges, Taunt,
    Fenwick (Ranger — hero haste), Thornwild (Druid — enemy
@@ -22,7 +44,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Alegreya+Sans:wght@400;500;700&display=swap');`;
 
-const VERSION = "0.013";
+const VERSION = "0.021";
 
 /* persistent save (localStorage) — survives the run/battle state isn't saved,
    only your Hold progression: resources, building levels, runs done, the
@@ -171,11 +193,11 @@ const REGIONS = {
     ],
     boss: E("Herald of Gloaming", "💀", 240, 12, 8, 10, 8, 12, 6, 92, 9),
     relics: [
-      { id: "fang", name: "Ashen Fang", icon: "🗡️", desc: "+25% hero attack", mod: { atkPct: 25 } },
+      { id: "fang", name: "Ashen Fang", icon: "🗡️", desc: "+15% hero attack", mod: { atkPct: 15 } },
       { id: "idol", name: "Warding Idol", icon: "🗿", desc: "Enemies deal -15% damage", mod: { enemyAtkPct: -15 } },
-      { id: "chalice", name: "Ember Chalice", icon: "🏆", desc: "+30 HP heal after each fight", mod: { healAfterFight: 30 } },
-      { id: "hourglass", name: "Hourglass of Sol", icon: "⏳", desc: "Ultimates charge 40% faster", mod: { ultPct: 40 } },
-      { id: "caravan", name: "Ember Caravan", icon: "🛒", desc: "+30% all resources from fights", mod: { allLootPct: 30 } },
+      { id: "chalice", name: "Ember Chalice", icon: "🏆", desc: "+20 HP heal after each fight", mod: { healAfterFight: 20 } },
+      { id: "hourglass", name: "Hourglass of Sol", icon: "⏳", desc: "Ultimates charge 20% faster", mod: { ultPct: 20 } },
+      { id: "caravan", name: "Ember Caravan", icon: "🛒", desc: "+15% all resources from fights", mod: { allLootPct: 15 } },
       { id: "phoenix", name: "Phoenix Feather", icon: "🪶", desc: "First fallen hero revives at 30%", mod: { phoenix: 1 } },
     ],
     events: [
@@ -212,7 +234,7 @@ const REGIONS = {
       { id: "lantern", name: "Spelunker's Lantern", icon: "🏮", desc: "+6 accuracy", mod: { accFlat: 6 } },
       { id: "quartz", name: "Vein of Quartz", icon: "💠", desc: "Heroes +5 magic defense", mod: { mdefFlat: 5 } },
       { id: "stalkereye", name: "Stalker's Eye", icon: "👁️", desc: "Heroes +8 evasion", mod: { evaFlat: 8 } },
-      { id: "echocharm", name: "Echoing Charm", icon: "🔔", desc: "Ultimates charge 30% faster", mod: { ultPct: 30 } },
+      { id: "echocharm", name: "Echoing Charm", icon: "🔔", desc: "Ultimates charge 15% faster", mod: { ultPct: 15 } },
       { id: "hoard", name: "Glittering Hoard", icon: "✨", desc: "+30% all resources from fights", mod: { allLootPct: 30 } },
     ],
     events: [
@@ -244,13 +266,14 @@ const REGIONS = {
       E("Twin-Head Ogre", "👬", 160, 13, 8, 3, 5, 10, 4, 85, 10),
     ],
     boss: E("The Ogre King", "👑", 300, 15, 10, 4, 7, 12, 4, 90, 9),
+    bossAdds: [E("Twin-head Ogre", "👹", 160, 11, 7, 2, 5, 9, 3, 86, 8)],
     relics: [
       { id: "wolfsblood", name: "Wolfsblood Vial", icon: "🧪", desc: "Heroes +20% attack speed", mod: { spdPct: 20 } },
       { id: "ironbark", name: "Ironbark Hide", icon: "🛡️", desc: "Heroes +4 defense", mod: { defFlat: 4 } },
       { id: "tanglecharm", name: "Tanglevine Charm", icon: "🌿", desc: "Enemies 15% slower", mod: { enemySpdPct: -15 } },
       { id: "hunterseye", name: "Hunter's Eye", icon: "🎯", desc: "Heroes +8 accuracy", mod: { accFlat: 8 } },
-      { id: "bounty", name: "Forest Bounty", icon: "🍂", desc: "+30% all resources from fights", mod: { allLootPct: 30 } },
-      { id: "mossheart", name: "Moss Heart", icon: "💚", desc: "+40 HP heal after each fight", mod: { healAfterFight: 40 } },
+      { id: "bounty", name: "Forest Bounty", icon: "🍂", desc: "+20% all resources from fights", mod: { allLootPct: 20 } },
+      { id: "mossheart", name: "Moss Heart", icon: "💚", desc: "+30 HP heal after each fight", mod: { healAfterFight: 30 } },
     ],
     events: [
       { text: "An ogre cookpot bubbles unattended over a great fire.", a: { label: "Steal the stew", fn: s => Math.random() > 0.4 ? { ...s, teamHeal: 30, blessing: "Hearty and hot! The party heals 30 HP." } : { ...s, teamDmg: 20, blessing: "The cook returns mid-bite. You flee with bruises: -20 HP." } }, b: { label: "Tip it over and run", fn: s => ({ ...s, blessing: "Distant roars of ogre fury echo behind you. Worth it." }) } },
@@ -263,7 +286,22 @@ const REGIONS = {
   },
 };
 
-/* random modifier applied to all enemy encounters after descending deeper */
+/* Realms — the world is organized into realms, each containing several
+   regions. Defeating the final boss of a realm will (eventually) unlock the
+   next realm. For now only the Earthen Realm exists. */
+const REALMS = {
+  earthen: { id: "earthen", name: "Earthen Realm", icon: "🏔️", regions: ["marsh", "cave", "forest"] },
+};
+const realmOf = regionId => Object.values(REALMS).find(rl => rl.regions.includes(regionId)) || REALMS.earthen;
+
+/* random modifier applied to all enemy encounters after descending deeper.
+   Modifiers STACK — each descent adds one, and all stay active. */
+const modsOf = r => (r?.modifiers) || (r?.modifier ? [r.modifier] : []);
+const aggMods = r => {
+  const out = { enemyHpPct: 0, enemyAtkPct2: 0, enemySpdPct2: 0, heroAccFlat: 0 };
+  modsOf(r).forEach(m => { for (const k in m.mod) out[k] = (out[k] || 0) + m.mod[k]; });
+  return out;
+};
 const REGION_ORDER = ["marsh", "cave", "forest"];
 const nextRegion = id => REGION_ORDER[REGION_ORDER.indexOf(id) + 1] || null;
 const regionIndexOf = id => Math.max(0, REGION_ORDER.indexOf(id));
@@ -274,15 +312,19 @@ const DESCENT_MODS = [
   { id: "mists", name: "Cloying Mists", desc: "Heroes lose 8 accuracy", mod: { heroAccFlat: -8 } },
 ];
 
-/* equipment — drops ONLY from bosses */
+/* equipment — drops ONLY from bosses. Each region's boss drops from its own
+   2-item pool. Every item has exactly ONE modifier (a future upgrade system
+   will add a second modifier at upgrade tier 1). */
 const ITEMS = [
-  { id: "blade", name: "Heraldbane Blade", icon: "🗡️", desc: "+6 Attack", mod: { atk: 6 } },
-  { id: "aegis", name: "Gloamward Aegis", icon: "🛡️", desc: "+5 Defense, +5 Magic Def", mod: { def: 5, mdef: 5 } },
-  { id: "amulet", name: "Emberheart Amulet", icon: "📿", desc: "+30 Max HP", mod: { hp: 30 } },
-  { id: "eye", name: "Eye of the Worldflame", icon: "🔮", desc: "+8 Magic Attack", mod: { matk: 8 } },
-  { id: "boots", name: "Boots of the Wisp", icon: "🥾", desc: "+10 Evasion", mod: { eva: 10 } },
-  { id: "sigil", name: "Sigil of Precision", icon: "🎯", desc: "+8 Accuracy, +8 Critical", mod: { acc: 8, crit: 8 } },
-  { id: "band", name: "Quicksilver Band", icon: "💍", desc: "+4 Attack Speed", mod: { spd: 4 } },
+  /* marsh */
+  { id: "blade", region: "marsh", name: "Heraldbane Blade", icon: "🗡️", desc: "+6 Attack", mod: { atk: 6 } },
+  { id: "aegis", region: "marsh", name: "Gloamward Aegis", icon: "🛡️", desc: "+6 Defense", mod: { def: 6 } },
+  /* cave */
+  { id: "eye", region: "cave", name: "Eye of the Worldflame", icon: "🔮", desc: "+8 Magic Attack", mod: { matk: 8 } },
+  { id: "band", region: "cave", name: "Quicksilver Band", icon: "💍", desc: "+4 Attack Speed", mod: { spd: 4 } },
+  /* forest */
+  { id: "amulet", region: "forest", name: "Emberheart Amulet", icon: "📿", desc: "+30 Max HP", mod: { hp: 30 } },
+  { id: "boots", region: "forest", name: "Boots of the Wisp", icon: "🥾", desc: "+10 Evasion", mod: { eva: 10 } },
 ];
 
 /* ---------- helpers ---------- */
@@ -291,56 +333,96 @@ const shuffle = a => [...a].sort(() => Math.random() - 0.5);
 const aggRelics = relics => relics.reduce((a, r) => { for (const k in r.mod) a[k] = (a[k] || 0) + r.mod[k]; return a; }, {});
 
 function makeRunGrid() {
-  const grid = Array.from({ length: 3 }, () => Array(COLS).fill("fight"));
+  /* Grid is now 3 rows x (COLS+1) cols. The last col (index COLS) is the
+     "final waygate column": row 1 (middle) is ALWAYS a waygate; rows 0 and 2
+     are random non-waygate encounters. Every path can choose between healing
+     at the waygate or taking the alternate encounter for resources. */
+  const grid = Array.from({ length: 3 }, () => Array(COLS + 1).fill("fight"));
+
+  // gaps in cols 1 to COLS-1 only (col 0 and col COLS stay fully populated)
   const gapCols = shuffle(Array.from({ length: COLS - 1 }, (_, i) => i + 1)).slice(0, 3);
   shuffle([0, 1, 2]).forEach((row, i) => { if (Math.random() < 0.75) grid[row][gapCols[i]] = null; });
-  const [shrineCol, eventCol] = shuffle([1, 2, 3, 4, 5, 6]).slice(0, 2);
-  for (let r = 0; r < 3; r++) {
-    if (grid[r][shrineCol]) grid[r][shrineCol] = "shrine";
-    if (grid[r][eventCol]) grid[r][eventCol] = "event";
+
+  const fightCells = () => {
+    const out = [];
+    for (let r = 0; r < 3; r++) for (let c = 1; c < COLS; c++) if (grid[r][c] === "fight") out.push({ r, c });
+    return out;
+  };
+
+  /* waygates: 3 in distinct columns. AT LEAST ONE must be in cols 4-7
+     (1-indexed depths 5-8) — force the first placement to satisfy that, then
+     fill the other two anywhere. */
+  const waygateCols = new Set();
+  let forcedOne = false;
+  for (const { r, c } of shuffle(fightCells())) {
+    if (forcedOne) break;
+    if (c >= 4 && c <= 7) { grid[r][c] = "waygate"; waygateCols.add(c); forcedOne = true; }
   }
-  const cells = [];
-  for (let r = 0; r < 3; r++) for (let c = 1; c < COLS; c++) if (grid[r][c] === "fight") cells.push({ r, c });
-  const usedCols = new Set();
-  shuffle(cells).forEach(({ r, c }) => {
-    if (usedCols.size < 3 && !usedCols.has(c)) { grid[r][c] = "waygate"; usedCols.add(c); }
-  });
-  /* sprinkle variety — shrines may never appear in adjacent columns, so two
-     relic picks can never happen back to back */
-  const shrineCols = new Set([shrineCol]);
-  for (let r = 0; r < 3; r++) for (let c = 0; c < COLS; c++) {
-    if (grid[r][c] !== "fight") continue;
-    const roll = Math.random();
-    if (c >= 4 && roll < 0.3) grid[r][c] = "elite";
-    else if (roll < 0.42 && c > 0) {
-      const wantShrine = Math.random() < 0.5;
-      const shrineOk = !shrineCols.has(c - 1) && !shrineCols.has(c + 1);
-      if (wantShrine && shrineOk) { grid[r][c] = "shrine"; shrineCols.add(c); }
-      else grid[r][c] = "event";
-    }
+  for (const { r, c } of shuffle(fightCells())) {
+    if (waygateCols.size >= 3) break;
+    if (waygateCols.has(c)) continue;
+    grid[r][c] = "waygate"; waygateCols.add(c);
   }
 
-  /* enforce: ≥60% of encounters are fights or elites.
-     Counting all encounters incl. the converge waygate and boss.
-     Convert sprinkled shrines/events first (never the guaranteed
-     shrine/event columns), then surplus waygates (keep ≥1). */
+  /* shrines: 3 in distinct cols; no adjacent shrine cols */
+  const shrineCols = new Set();
+  for (const { r, c } of shuffle(fightCells())) {
+    if (shrineCols.size >= 3) break;
+    if (shrineCols.has(c) || shrineCols.has(c - 1) || shrineCols.has(c + 1)) continue;
+    grid[r][c] = "shrine"; shrineCols.add(c);
+  }
+
+  /* events: 3 in distinct cols */
+  const eventCols = new Set();
+  for (const { r, c } of shuffle(fightCells())) {
+    if (eventCols.size >= 3) break;
+    if (eventCols.has(c)) continue;
+    grid[r][c] = "event"; eventCols.add(c);
+  }
+
+  /* elites in mid-to-late cols */
+  for (let r = 0; r < 3; r++) for (let c = 4; c < COLS; c++) {
+    if (grid[r][c] === "fight" && Math.random() < 0.22) grid[r][c] = "elite";
+  }
+
+  /* FINAL WAYGATE COLUMN (col COLS): middle row is always a waygate, rows
+     0 and 2 are random non-waygate encounters (subject to shrine adjacency).
+     Don't duplicate a shrine across both rows — every column stays mixed. */
+  grid[1][COLS] = "waygate";
+  const col7HasShrine = grid.some(row => row[COLS - 1] === "shrine");
+  const convPool = ["fight", "fight", "elite", "event"];
+  if (!col7HasShrine) convPool.push("shrine");
+  grid[0][COLS] = rnd(convPool);
+  const row2Pool = grid[0][COLS] === "shrine" ? convPool.filter(t => t !== "shrine") : convPool;
+  grid[2][COLS] = rnd(row2Pool);
+
+  /* ≥60% combat enforcement. Preserve the middle-row col-COLS waygate AND
+     keep ≥1 waygate in cols 4-7 from being converted back to fights. */
   const isCombat = t => t === "fight" || t === "elite";
   const count = () => {
-    let combat = 1, total = 2; // boss (combat) + converge waygate (non-combat)
-    for (let r = 0; r < 3; r++) for (let c = 0; c < COLS; c++) {
+    let combat = 1, total = 1; // boss counts
+    for (let r = 0; r < 3; r++) for (let c = 0; c <= COLS; c++) {
       if (!grid[r][c]) continue;
       total++; if (isCombat(grid[r][c])) combat++;
     }
     return { combat, total };
   };
-  const convertibles = [];
-  for (let r = 0; r < 3; r++) for (let c = 0; c < COLS; c++) {
-    const t = grid[r][c];
-    if ((t === "shrine" || t === "event") && c !== shrineCol && c !== eventCol) convertibles.push({ r, c });
-  }
-  const waygates = [];
-  for (let r = 0; r < 3; r++) for (let c = 0; c < COLS; c++) if (grid[r][c] === "waygate") waygates.push({ r, c });
-  const pool = [...shuffle(convertibles), ...shuffle(waygates).slice(0, Math.max(0, waygates.length - 1))];
+  const collectByType = type => {
+    const out = [];
+    for (let r = 0; r < 3; r++) for (let c = 0; c <= COLS; c++) if (grid[r][c] === type) out.push({ r, c });
+    return out;
+  };
+  const ss = collectByType("shrine"), es = collectByType("event");
+  const allWg = collectByType("waygate");
+  const wgFinal = ({ r, c }) => r === 1 && c === COLS;
+  const wg47 = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= 4 && c <= 7);
+  const wgLow = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= 0 && c <= 3);
+  const wgPool = [...shuffle(wgLow), ...shuffle(wg47).slice(0, Math.max(0, wg47.length - 1))];
+  const pool = [
+    ...shuffle(ss).slice(0, Math.max(0, ss.length - 1)),
+    ...shuffle(es).slice(0, Math.max(0, es.length - 1)),
+    ...wgPool,
+  ];
   let { combat, total } = count();
   while (combat / total < 0.6 && pool.length) {
     const { r, c } = pool.shift();
@@ -348,31 +430,53 @@ function makeRunGrid() {
     combat++;
   }
 
-  /* hard guarantees (defensive — structurally these always hold):
-     ≥1 waygate on the map besides the converge gate, and ≥1 shrine */
+  /* hard guarantees */
   const has = type => grid.some(row => row.some(t => t === type));
-  if (!has("waygate")) {
-    outer: for (const c of shuffle(Array.from({ length: COLS - 1 }, (_, i) => i + 1))) {
+  const placeOne = type => {
+    const cells = fightCells();
+    if (!cells.length) return;
+    if (type === "shrine") {
+      const usedCols = new Set();
+      grid.forEach(row => row.forEach((t, c) => { if (t === "shrine") usedCols.add(c); }));
+      for (const { r, c } of shuffle(cells)) {
+        if (usedCols.has(c - 1) || usedCols.has(c + 1)) continue;
+        grid[r][c] = "shrine"; return;
+      }
+    }
+    const { r, c } = cells[0];
+    grid[r][c] = type;
+  };
+  if (!has("shrine")) placeOne("shrine");
+  if (!has("event")) placeOne("event");
+
+  /* defensive — make absolutely sure we have ≥1 waygate in cols 4-7 */
+  let hasWg47 = false;
+  for (let r = 0; r < 3; r++) for (let c = 4; c <= 7; c++) if (grid[r][c] === "waygate") hasWg47 = true;
+  if (!hasWg47) {
+    outer: for (const c of shuffle([4, 5, 6, 7])) {
       for (const r of shuffle([0, 1, 2])) {
-        if (grid[r][c] === "fight" && c !== shrineCol && c !== eventCol) { grid[r][c] = "waygate"; break outer; }
+        if (grid[r][c] === "fight") { grid[r][c] = "waygate"; break outer; }
       }
     }
   }
-  if (!has("shrine")) {
-    for (const r of [0, 1, 2]) if (grid[r][shrineCol]) { grid[r][shrineCol] = "shrine"; break; }
-  }
+
   return grid;
 }
 
-function makeEnemies(regionId, type, depth, modifier) {
+function makeEnemies(regionId, type, depth, modifiers) {
   const reg = REGIONS[regionId];
-  /* base depth scaling, then a random ~2% compounding bump per depth
-     (each depth multiplies difficulty by 1.01–1.03, centered on 2%) */
-  let scale = 1 + depth * 0.15;
+  /* REGION POWER: each region multiplies enemy strength — marsh 1×,
+     cave 2×, forest 2.5×. Future regions continue the climb (region 4
+     ≈ 3.5×+). The game gets harder as you progress. On top of that,
+     base depth scaling plus a random ~2% compounding bump per depth. */
+  const REGION_POWER = { marsh: 1, cave: 2, forest: 2.5 };
+  const regionPower = REGION_POWER[regionId] || (regionIndexOf(regionId) + 1);
+  let scale = (1 + depth * 0.10) * regionPower;
   for (let d = 0; d < depth; d++) scale *= 1 + 0.02 * (0.5 + Math.random());
   /* descent modifiers multiply the fully depth-scaled stats */
-  const hpMod = 1 + ((modifier?.mod.enemyHpPct || 0) / 100);
-  const atkMod = 1 + ((modifier?.mod.enemyAtkPct2 || 0) / 100);
+  const dm = aggMods({ modifiers: modifiers || [] });
+  const hpMod = 1 + (dm.enemyHpPct / 100);
+  const atkMod = 1 + (dm.enemyAtkPct2 / 100);
   const mk = base => {
     const hp = Math.round(base.hp * ENEMY_HP_MUL * scale * hpMod);
     return {
@@ -382,7 +486,7 @@ function makeEnemies(regionId, type, depth, modifier) {
       def: Math.round(base.def * scale), mdef: Math.round(base.mdef * scale),
     };
   };
-  if (type === "boss") return [mk(reg.boss)];
+  if (type === "boss") return [mk(reg.boss), ...(reg.bossAdds || []).map(mk)];
   if (type === "elite") return [mk(rnd(reg.elites)), mk(rnd(reg.basics))];
   const n = depth < 3 ? 2 : 3;
   return Array.from({ length: n }, () => mk(rnd(reg.basics)));
@@ -431,7 +535,7 @@ const Res = ({ res }) => (
 function effectiveHero(h, r, b) {
   if (!h) return h;
   const ag = aggRelics(r?.relics || []);
-  const dm = r?.modifier?.mod || {};
+  const dm = aggMods(r);
   const tick = b?.tick || 0;
   const atkMul = (1 + (r?.atkMod || 0)) * (1 + (ag.atkPct || 0) / 100);
   const accAdj = (ag.accFlat || 0) + (dm.heroAccFlat || 0);
@@ -449,6 +553,7 @@ function effectiveHero(h, r, b) {
     eva: h.eva + (ag.evaFlat || 0),
     acc: h.acc + accAdj,
     spd: Math.round(h.spd * spdMul * (hasteOn ? 1.6 : 1)),
+    ultPerAtk: Math.round(20 * (1 + (ag.ultPct || 0) / 100)),
   };
 }
 function effectiveEnemy(e, r, b) {
@@ -476,6 +581,8 @@ const STAT_ROWS = [
   ["Critical", u => `${u.crit}%`],
   ["Evasion", u => `${u.eva}%`],
   ["Accuracy", u => `${u.acc}%`],
+  ["Ult Charge", u => u.ultName ? `${Math.round(u.ult || 0)}%` : null],
+  ["Ult/Atk", u => u.ultName ? `${u.ultPerAtk ?? 20}%` : null],
 ];
 
 function StatCard({ unit, idKey, pinned, setPinned, hovered, setHovered, children, style, onClick, dir = "up", clickOnly = false }) {
@@ -498,11 +605,15 @@ function StatCard({ unit, idKey, pinned, setPinned, hovered, setHovered, childre
           zIndex: 50, width: 150, boxShadow: "0 6px 18px #000a", pointerEvents: "none",
         }}>
           <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 700, fontSize: 12, color: C.gold, marginBottom: 6, textAlign: "center" }}>{unit.name}</div>
-          {STAT_ROWS.map(([label, fn]) => (
-            <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.text, lineHeight: 1.7 }}>
-              <span style={{ color: C.dim }}>{label}</span><span>{fn(unit)}</span>
-            </div>
-          ))}
+          {STAT_ROWS.map(([label, fn]) => {
+            const v = fn(unit);
+            if (v === null || v === undefined) return null;
+            return (
+              <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.text, lineHeight: 1.7 }}>
+                <span style={{ color: C.dim }}>{label}</span><span>{v}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -520,6 +631,13 @@ export default function Emberhold() {
   const [items, setItems] = usePersistent("items", []);
   const [equips, setEquips] = usePersistent("equips", {});
   const [party, setParty] = usePersistent("party", ["bran", "kael", "syra"]);
+  /* heroes who died last expedition must recover one expedition before they
+     can be selected again. benched is {heroId: expeditionsRemaining}. */
+  const [benched, setBenched] = usePersistent("benched", {});
+  /* last descent modifier id is excluded from the next descent roll —
+     prevents back-to-back repeats and the player feeling like only one
+     modifier ever comes up */
+  const [lastModifierId, setLastModifierId] = usePersistent("lastModifierId", null);
   const [equipPicker, setEquipPicker] = useState(null);
 
   /* run state (persisted so reloading doesn't reset the map). Battle state is
@@ -540,6 +658,7 @@ export default function Emberhold() {
   const [pinned, setPinned] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [showMap, setShowMap] = useState(false);
+  const [logDetail, setLogDetail] = useState(false);
   const [musicOn, setMusicOn] = usePersistent("musicOn", false);
   const [musicVol, setMusicVol] = usePersistent("musicVol", 0.5);
 
@@ -555,7 +674,7 @@ export default function Emberhold() {
   }, [screen, musicOn]);
 
   const BUILDINGS = [
-    { id: "forge", name: "Forge", icon: "⚒️", desc: "+12% hero attack & magic attack / depth", cost: l => ({ gold: 60 * l, wood: 30 * l }) },
+    { id: "forge", name: "Forge", icon: "⚒️", desc: "+12% hero attack & magic attack / depth", cost: l => ({ gold: 45 * l, wood: 30 * l }) },
     { id: "barracks", name: "Barracks", icon: "🏰", desc: "+15% hero HP / depth", cost: l => ({ gold: 50 * l, wood: 40 * l }) },
     { id: "arcanum", name: "Arcanum", icon: "🔮", desc: "+8% ult charge speed / depth", cost: l => ({ gold: 80 * l, embers: 2 * l }) },
     { id: "shard", name: "Worldflame Shard", icon: "🔥", desc: "+10% all loot / depth", cost: l => ({ embers: 4 * l, wood: 50 * l }) },
@@ -589,7 +708,7 @@ export default function Emberhold() {
     if (party.length !== 3) return;
     const heroes = heroStats().filter(h => party.includes(h.id)).map(h => ({ ...h, hp: h.maxHp, ult: 0, gauge: 0, alive: true }));
     setRun({
-      regionId: "marsh", modifier: null, drops: [],
+      regionId: "marsh", modifier: null, modifiers: [], drops: [],
       grid: makeRunGrid(), pos: null, visited: [],
       heroes, gold: 0, wood: 0, embers: 0, relics: [], atkMod: 0, phoenixUsed: false,
       corruptionBaseline: 0,
@@ -597,13 +716,12 @@ export default function Emberhold() {
     setScreen("map");
   };
 
-  const depthOf = r => (r.pos ? (r.pos.boss ? COLS + 1 : r.pos.converge ? COLS : r.pos.col) : -1);
+  const depthOf = r => (r.pos ? (r.pos.boss ? COLS + 1 : r.pos.col) : -1);
 
   const candidatesOf = r => {
     if (!r.pos) return [0, 1, 2].filter(row => r.grid[row][0]).map(row => ({ row, col: 0 }));
     if (r.pos.boss) return [];
-    if (r.pos.converge) return [{ boss: true }];
-    if (r.pos.col === COLS - 1) return [{ converge: true }];
+    if (r.pos.col === COLS) return [{ boss: true }];
     return [r.pos.row - 1, r.pos.row, r.pos.row + 1]
       .filter(row => row >= 0 && row < 3 && r.grid[row][r.pos.col + 1])
       .map(row => ({ row, col: r.pos.col + 1 }));
@@ -613,17 +731,17 @@ export default function Emberhold() {
     setPinned(null);
     setShowMap(false);
     const r = runRef.current;
-    const type = cand.boss ? "boss" : cand.converge ? "waygate" : r.grid[cand.row][cand.col];
+    const type = cand.boss ? "boss" : r.grid[cand.row][cand.col];
     /* backup guard: never allow a relic pick immediately after a relic pick */
     if (type === "shrine" && r.lastType === "shrine") return;
-    const visited = r.pos && !r.pos.boss && !r.pos.converge ? [...r.visited, `${r.pos.row}-${r.pos.col}`] : r.visited;
+    const visited = r.pos && !r.pos.boss ? [...r.visited, `${r.pos.row}-${r.pos.col}`] : r.visited;
     const r2 = { ...r, pos: cand, visited, lastType: type };
     setRun(r2);
-    const depth = cand.boss ? COLS + 1 : cand.converge ? COLS : cand.col;
+    const depth = cand.boss ? COLS + 1 : cand.col;
 
     if (type === "fight" || type === "elite" || type === "boss") {
-      const enemies = makeEnemies(r2.regionId, type, depth, r2.modifier);
-      setBattle({ enemies, type, log: ["The enemy blocks your path. Steel yourselves..."], focus: enemies[0].key, surge: null, tick: 0, started: false, tauntUntil: 0, hasteUntil: 0, slowUntil: 0, slowedKey: null });
+      const enemies = makeEnemies(r2.regionId, type, depth, modsOf(r2));
+      setBattle({ enemies, type, log: [{ text: "The enemy blocks your path. Steel yourselves...", level: "major" }], focus: enemies[0].key, surge: null, tick: 0, started: false, tauntUntil: 0, hasteUntil: 0, slowUntil: 0, slowedKey: null });
       setScreen("battle");
     } else if (type === "shrine") {
       const pool = REGIONS[r2.regionId].relics.filter(x => !r2.relics.find(y => y.id === x.id));
@@ -659,7 +777,7 @@ export default function Emberhold() {
       const b = battleRef.current, r = runRef.current;
       if (!b || !r || !b.started) return;
       const ag = aggRelics(r.relics);
-      const dm = r.modifier?.mod || {};
+      const dm = aggMods(r);
       let heroes = r.heroes.map(h => ({ ...h }));
       let enemies = b.enemies.map(e => ({ ...e }));
       let log = [...b.log];
@@ -691,7 +809,8 @@ export default function Emberhold() {
               const { dmg, crit } = rollDamage({ ...h, atk: Math.round(h.atk * atkMul), matk: Math.round(h.matk * atkMul), crit: h.crit + (ag.critFlat || 0) }, t, 1);
               t.hp -= dmg;
               if (crit) addFloat(`CRIT -${dmg}`, C.gold);
-            } else addFloat("MISS", C.dim);
+              log.push({ text: `${h.icon} ${h.name} ${crit ? "CRITS" : "hits"} ${t.name} for ${dmg}${t.hp <= 0 ? " — felled!" : ""}`, level: "detail" });
+            } else { addFloat("MISS", C.dim); log.push({ text: `${h.icon} ${h.name} misses ${t.name}`, level: "detail" }); }
           }
         }
       });
@@ -712,7 +831,8 @@ export default function Emberhold() {
             const { dmg, crit } = rollDamage({ ...e, atk: Math.round(e.atk * eAtkMul), matk: Math.round(e.matk * eAtkMul) }, td, 1);
             t.hp -= dmg;
             if (crit) addFloat(`-${dmg} CRIT!`, C.red);
-          } else addFloat("DODGED", C.umbral);
+            log.push({ text: `${e.icon} ${e.name} ${crit ? "CRITS" : "hits"} ${t.name} for ${dmg}`, level: "detail" });
+          } else { addFloat("DODGED", C.umbral); log.push({ text: `${t.name} dodges ${e.name}`, level: "detail" }); }
         }
       });
 
@@ -731,7 +851,7 @@ export default function Emberhold() {
               const { dmg: raw } = rollDamage({ ...src, atk: Math.round(src.atk * eAtkMul), matk: Math.round(src.matk * eAtkMul), crit: 0 }, td, 3);
               const dmg = surge.braced ? Math.round(raw * 0.3) : raw;
               t.hp -= dmg;
-              log.push(surge.braced ? `🛡️ BRACED! ${t.name} takes only ${dmg}` : `💥 Surge hits ${t.name} for ${dmg}!`);
+              log.push({ text: surge.braced ? `🛡️ BRACED! ${t.name} takes only ${dmg}` : `💥 Surge hits ${t.name} for ${dmg}!`, level: "major" });
               addFloat(surge.braced ? `-${dmg} 🛡️` : `-${dmg}!`, surge.braced ? C.umbral : C.red);
             }
           }
@@ -741,7 +861,7 @@ export default function Emberhold() {
         const live = enemies.filter(e => e.hp > 0);
         if (live.length) {
           surge = { enemyKey: rnd(live).key, ticksLeft: 8, braced: false };
-          log.push("⚠️ An enemy is winding up a heavy attack — BRACE!");
+          log.push({ text: "⚠️ An enemy is winding up a heavy attack — BRACE!", level: "major" });
         }
       }
 
@@ -750,8 +870,8 @@ export default function Emberhold() {
         if (h.alive && h.hp <= 0) {
           if (ag.phoenix && !phoenixUsed) {
             h.hp = Math.round(h.maxHp * 0.3); phoenixUsed = true;
-            log.push(`🪶 ${h.name} rises from the ashes!`);
-          } else { h.alive = false; h.hp = 0; log.push(`☠️ ${h.name} has fallen!`); }
+            log.push({ text: `🪶 ${h.name} rises from the ashes!`, level: "major" });
+          } else { h.alive = false; h.hp = 0; log.push({ text: `☠️ ${h.name} has fallen!`, level: "major" }); }
         }
       });
       enemies.forEach(e => { e.hp = Math.max(0, e.hp); });
@@ -771,7 +891,7 @@ export default function Emberhold() {
   /* --- player actions --- */
   const startFight = () => {
     const b = battleRef.current;
-    if (b) setBattle({ ...b, started: true, log: ["⚔️ The clash begins!"] });
+    if (b) setBattle({ ...b, started: true, log: [{ text: "⚔️ The clash begins!", level: "major" }] });
   };
 
   const setFocus = key => {
@@ -801,14 +921,14 @@ export default function Emberhold() {
     /* ultimates scale +2% per depth (damage, healing, and durations) */
     const ultScale = 1 + 0.02 * Math.max(0, depthOf(r));
 
-    if (h.id === "bran") { tauntUntil = b.tick + Math.round(8 * ultScale); log.push("🛡️ TAUNT! All eyes on Branwen — defenses doubled"); addFloat("🛡️ TAUNT", C.blue); }
+    if (h.id === "bran") { tauntUntil = b.tick + Math.round(8 * ultScale); log.push({ text: "🛡️ TAUNT! All eyes on Branwen — defenses doubled", level: "major" }); addFloat("🛡️ TAUNT", C.blue); }
     if (h.id === "kael") {
       const live = enemies.filter(e => e.hp > 0);
       if (live.length) {
         const t = enemies.find(e => e.key === b.focus && e.hp > 0) || live.reduce((a, c) => a.hp > c.hp ? a : c);
         const { dmg } = rollDamage({ ...h, atk: Math.round(h.atk * atkMul) }, t, 3 * ultScale);
         t.hp = Math.max(0, t.hp - dmg);
-        log.push(`⚔️ Sever! ${dmg} damage`); addFloat(`-${dmg} ⚔️`, C.ember);
+        log.push({ text: `⚔️ Sever! ${dmg} damage`, level: "major" }); addFloat(`-${dmg} ⚔️`, C.ember);
       }
     }
     if (h.id === "syra") {
@@ -817,14 +937,14 @@ export default function Emberhold() {
         const { dmg } = rollDamage({ ...h, matk: Math.round(h.matk * atkMul) }, e, 2 * ultScale);
         return { ...e, hp: Math.max(0, e.hp - dmg) };
       });
-      log.push("🔥 Cinder Nova engulfs all foes!"); addFloat("🔥 NOVA", C.ember);
+      log.push({ text: "🔥 Cinder Nova engulfs all foes!", level: "major" }); addFloat("🔥 NOVA", C.ember);
     }
     if (h.id === "prie") {
       const heal = Math.round(15 * ultScale);
       heroes = heroes.map(x => x.alive ? { ...x, hp: Math.min(x.maxHp, x.hp + heal) } : x);
-      log.push(`🙏 Sanctuary! Party healed +${heal}`); addFloat(`+${heal} ❤️`, C.green);
+      log.push({ text: `🙏 Sanctuary! Party healed +${heal}`, level: "major" }); addFloat(`+${heal} ❤️`, C.green);
     }
-    if (h.id === "rang") { hasteUntil = b.tick + Math.round(12 * ultScale); log.push("🏹 Quickdraw! Fenwick attacks 60% faster"); addFloat("🏹 HASTE", C.blue); }
+    if (h.id === "rang") { hasteUntil = b.tick + Math.round(12 * ultScale); log.push({ text: "🏹 Quickdraw! Fenwick attacks 60% faster", level: "major" }); addFloat("🏹 HASTE", C.blue); }
     if (h.id === "drui") {
       const live = enemies.filter(e => e.hp > 0);
       const t = enemies.find(e => e.key === b.focus && e.hp > 0) || live[0];
@@ -838,7 +958,7 @@ export default function Emberhold() {
         if (livingHeroes.length) {
           const lowest = livingHeroes.reduce((a, c) => (c.h.hp / c.h.maxHp) < (a.h.hp / a.h.maxHp) ? c : a);
           heroes[lowest.i] = { ...heroes[lowest.i], hp: Math.min(heroes[lowest.i].maxHp, heroes[lowest.i].hp + heal) };
-          log.push(`🌿 Wildkin Bloom! ${t.name} -${dmg} & slowed · ${heroes[lowest.i].name} +${heal} HP`);
+          log.push({ text: `🌿 Wildkin Bloom! ${t.name} -${dmg} & slowed · ${heroes[lowest.i].name} +${heal} HP`, level: "major" });
           addFloat(`-${dmg} 🌿`, C.green);
         }
       }
@@ -852,7 +972,7 @@ export default function Emberhold() {
   const winFight = (r, heroes, type, fullLog) => {
     const depth = depthOf(r);
     const ag = aggRelics(r.relics);
-    const regionMul = 1 + regionIndexOf(r.regionId) * 0.3; // marsh 1.0, cave 1.3, forest 1.6
+    const regionMul = 1 + regionIndexOf(r.regionId) * 1.5; // marsh 1.0, cave 2.5, forest 4.0
     const mult = (type === "boss" ? 4 : type === "elite" ? 2 : 1) * (1 + 0.1 * (bld.shard - 1)) * regionMul;
     const goldMul = 1 + (ag.goldPct || 0) / 100;
     const allMul = 1 + (ag.allLootPct || 0) / 100;
@@ -869,17 +989,44 @@ export default function Emberhold() {
     };
     setBattle(null);
 
+    let bonusDrop = null;
     if (type === "boss") {
-      /* bosses are the ONLY source of equipment */
-      const drop = rnd(ITEMS);
-      const uid = Math.random().toString(36).slice(2);
-      setItems(p => [...p, { uid, id: drop.id }]);
-      r2 = { ...r2, drops: [...r2.drops, { ...drop, uid }] };
+      /* victory restoration: revive any fallen heroes at 30% HP, and bump
+         living heroes up to at least 30% if they were hurt below that */
+      const recovered = r2.heroes.map(h => ({
+        ...h,
+        alive: true,
+        hp: h.alive
+          ? Math.max(h.hp, Math.round(h.maxHp * 0.3))
+          : Math.round(h.maxHp * 0.3),
+      }));
+      r2 = { ...r2, heroes: recovered };
+
+      /* equipment drop preference:
+         - each region's boss drops only from that region's 2-item pool
+         - prefer an item the player does NOT already own (no duplicates)
+         - if the region's pool is fully collected, drop a treasure cache */
+      const ownedIds = new Set(items.map(it => it.id));
+      const regionPool = ITEMS.filter(it => it.region === r.regionId);
+      const uncollected = regionPool.filter(it => !ownedIds.has(it.id));
+      if (uncollected.length > 0) {
+        const drop = rnd(uncollected);
+        const uid = Math.random().toString(36).slice(2);
+        setItems(p => [...p, { uid, id: drop.id }]);
+        r2 = { ...r2, drops: [...r2.drops, { ...drop, uid }] };
+      } else {
+        const regMul = 1 + regionIndexOf(r.regionId) * 1.5;
+        const bGold = Math.round(50 * regMul);
+        const bWood = Math.round(25 * regMul);
+        const bEmber = Math.round(3 * regMul);
+        r2 = { ...r2, gold: r2.gold + bGold, wood: r2.wood + bWood, embers: r2.embers + bEmber };
+        bonusDrop = { gold: bGold, wood: bWood, embers: bEmber };
+      }
     }
     setRun(r2);
     setCombatReview({
       type, log: fullLog || [], gained: { gold: goldGain, wood: woodGain, embers: emberGain },
-      bossKill: type === "boss", regionId: r2.regionId,
+      bossKill: type === "boss", regionId: r2.regionId, bonusDrop,
     });
     setScreen("combatReview");
   };
@@ -890,10 +1037,16 @@ export default function Emberhold() {
     const r = runRef.current;
     const nxt = nextRegion(r.regionId);
     if (!nxt) return;
-    const m = rnd(DESCENT_MODS);
+    /* modifiers STACK across descents. Exclude every already-active id and
+       the last rolled id (persisted) so the player always sees variety */
+    const active = modsOf(r);
+    const excluded = new Set([...active.map(x => x.id), lastModifierId].filter(Boolean));
+    const pool = DESCENT_MODS.filter(x => !excluded.has(x.id));
+    const m = rnd(pool.length ? pool : DESCENT_MODS.filter(x => !active.some(a => a.id === x.id)));
+    setLastModifierId(m.id);
     const heroes = r.heroes.map(h => h.alive ? { ...h, hp: Math.min(h.maxHp, h.hp + Math.round(h.maxHp * 0.3)), gauge: 0, ult: 0 } : h);
     const carriedBaseline = corruption / 3;
-    setRun({ ...r, regionId: nxt, modifier: m, grid: makeRunGrid(), pos: null, visited: [], heroes, corruptionBaseline: carriedBaseline });
+    setRun({ ...r, regionId: nxt, modifier: m, modifiers: [...active, m], grid: makeRunGrid(), pos: null, visited: [], heroes, corruptionBaseline: carriedBaseline });
     setScreen("modifier");
   };
 
@@ -931,7 +1084,16 @@ export default function Emberhold() {
     const gained = { gold: Math.round(r.gold * k), wood: Math.round(r.wood * k), embers: Math.round(r.embers * k) };
     setRes(p => ({ gold: p.gold + gained.gold, wood: p.wood + gained.wood, embers: p.embers + gained.embers }));
     setRunsDone(n => n + 1);
-    setSummary({ extracted, bossKill, gained, depth: depthOf(r) + 1, drops: r.drops, regionId: r.regionId, ogreKill: bossKill && r.regionId === "forest" });
+    /* recovery accounting: decrement existing bench counts, then add this
+       expedition's fallen heroes to sit out one expedition */
+    setBenched(prev => {
+      const next = {};
+      for (const [id, n] of Object.entries(prev || {})) if (n > 1) next[id] = n - 1;
+      r.heroes.forEach(h => { if (!h.alive) next[h.id] = 1; });
+      return next;
+    });
+    const fallen = r.heroes.filter(h => !h.alive).map(h => h.id);
+    setSummary({ extracted, bossKill, gained, depth: depthOf(r) + 1, drops: r.drops, regionId: r.regionId, ogreKill: bossKill && r.regionId === "forest", fallen });
     setRun(null); setBattle(null);
     setScreen("summary");
   };
@@ -944,6 +1106,7 @@ export default function Emberhold() {
   };
 
   const toggleParty = id => {
+    if (benched[id]) return;
     setParty(p => p.includes(id) ? p.filter(x => x !== id) : p.length < 3 ? [...p, id] : p);
   };
 
@@ -952,6 +1115,37 @@ export default function Emberhold() {
   useEffect(() => {
     if (screen === "battle" && !battle && run) setScreen("map");
   }, [screen, battle, run]);
+
+  /* benched heroes can't be in the party — auto-deselect after a run ends */
+  useEffect(() => {
+    const cleaned = party.filter(id => !benched[id]);
+    if (cleaned.length !== party.length) setParty(cleaned);
+  }, [benched]); // eslint-disable-line
+
+  /* migrate: stale in-progress runs from before col-9 expansion don't have
+     the right grid shape — clear them so the player gets a fresh expedition */
+  useEffect(() => {
+    if (run && (!run.grid || !run.grid[0] || run.grid[0].length !== COLS + 1)) {
+      setRun(null);
+      setScreen("base");
+    }
+  }, []); // eslint-disable-line
+
+  /* migrate: items whose definitions were removed (e.g. old Sigil of
+     Precision) get cleaned out of the armory and unequipped */
+  useEffect(() => {
+    const valid = new Set(ITEMS.map(it => it.id));
+    if (items.some(it => !valid.has(it.id))) {
+      const keep = items.filter(it => valid.has(it.id));
+      const keepUids = new Set(keep.map(it => it.uid));
+      setItems(keep);
+      setEquips(prev => {
+        const next = {};
+        for (const [hid, uid] of Object.entries(prev)) if (keepUids.has(uid)) next[hid] = uid;
+        return next;
+      });
+    }
+  }, []); // eslint-disable-line
 
   /* ---------- render ---------- */
   /* corruption: starts at the carried-over baseline (1/3 of prior region's
@@ -980,7 +1174,7 @@ export default function Emberhold() {
         }}>
           {r.grid.map((rowArr, r2) => rowArr.map((t, c2) => {
             if (!t) return null;
-            const isHere = here && !here.boss && !here.converge && here.row === r2 && here.col === c2;
+            const isHere = here && !here.boss && here.row === r2 && here.col === c2;
             const was = r.visited.includes(`${r2}-${c2}`);
             return (
               <div key={`${r2}-${c2}`} style={{
@@ -992,10 +1186,6 @@ export default function Emberhold() {
               }}>{icons[t]}</div>
             );
           }))}
-          <div style={{
-            gridRow: 2, gridColumn: COLS + 1, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15,
-            background: here?.converge ? C.ember : C.panel, border: `1px solid ${C.umbral}55`,
-          }}>🌀</div>
           <div style={{
             gridRow: 2, gridColumn: COLS + 2, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15,
             background: here?.boss ? C.ember : C.panel, border: `1px solid ${C.red}55`,
@@ -1016,6 +1206,57 @@ export default function Emberhold() {
       {showMap && <div style={{ marginTop: 8 }}><MapPeek r={r} /></div>}
     </div>
   );
+
+  /* persistent panels reused across map / event / relic / waygate screens
+     so the player can always see hero HP, live stats, and active effects */
+  const PartyPanel = ({ r }) => (
+    <div style={{ background: C.panel, borderRadius: 14, padding: 14, marginBottom: 12, border: `1px solid ${C.panel2}` }}>
+      {r.heroes.map(h => {
+        const eff = effectiveHero(h, r, null);
+        return (
+          <div key={h.id} style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", fontSize: 13, marginBottom: 3 }}>
+              <span style={{ opacity: h.alive ? 1 : 0.35 }}>{h.icon} {h.name}</span>
+              <span style={{ marginLeft: "auto", color: h.alive ? C.dim : C.red, fontWeight: h.alive ? 400 : 700 }}>{h.alive ? `${h.hp}/${h.maxHp}` : "DOWNED"}</span>
+            </div>
+            <Bar val={h.hp} max={h.maxHp} color={h.alive ? C.green : C.red} />
+            {h.alive && (
+              <div style={{ fontSize: 11, color: C.dim, marginTop: 4, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <span>⚔️ {eff.atk}</span>
+                <span>🔮 {eff.matk}</span>
+                <span>🛡️ {eff.def}</span>
+                <span>🪄 {eff.mdef}</span>
+                <span>💨 {eff.spd}</span>
+                <span style={{ color: (h.ult || 0) >= 100 ? C.ember : C.dim }}>⚡ {Math.round(h.ult || 0)}%</span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const EffectsPanel = ({ r }) => {
+    const activeMods = modsOf(r);
+    if (!(r.atkMod > 0 || activeMods.length > 0 || r.relics.length > 0)) return null;
+    return (
+      <div style={{ background: "#1c1628", borderRadius: 12, padding: "8px 12px", marginBottom: 12, border: `1px solid ${C.panel2}`, fontSize: 12 }}>
+        <div style={{ color: C.dim, fontSize: 11, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>ACTIVE EFFECTS</div>
+        {r.atkMod > 0 && <div style={{ color: C.green }}>🌟 Event blessing: +{Math.round(r.atkMod * 100)}% attack this run</div>}
+        {activeMods.map(m => <div key={m.id} style={{ color: C.red }}>🌑 {m.name}: {m.desc}</div>)}
+        {r.relics.length > 0 && (
+          <div style={{ marginTop: 2 }}>
+            <div style={{ color: C.gold, marginBottom: 2 }}>Relics:</div>
+            {r.relics.map(x => (
+              <div key={x.id} style={{ color: C.text, paddingLeft: 8, lineHeight: 1.5 }}>
+                {x.icon} <span style={{ fontWeight: 700, color: C.gold }}>{x.name}</span> <span style={{ color: C.dim }}>— {x.desc}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const Shell = ({ children, title, sub }) => (
     <div style={{ minHeight: "100vh", background: `${glow}, ${C.bg}`, color: C.text, fontFamily: "'Alegreya Sans',sans-serif", maxWidth: 480, margin: "0 auto", padding: "20px 16px 32px", position: "relative" }}>
@@ -1041,7 +1282,7 @@ export default function Emberhold() {
   if (screen === "base") {
     const heroes = heroStats();
     return (
-      <Shell title="Your Hold" sub={`The Worldflame burns. Expeditions: ${runsDone}${caveUnlocked ? " · 🕳️ Deep" : ""}${forestUnlocked ? " · 🌲 Forest" : ""}`}>
+      <Shell title="Your Hold" sub={`${REALMS.earthen.icon} ${REALMS.earthen.name} · Expeditions: ${runsDone}${caveUnlocked ? " · 🕳️ Deep" : ""}${forestUnlocked ? " · 🌲 Forest" : ""}${Object.keys(benched).length ? ` · 🩹 ${Object.keys(benched).length} recovering` : ""}`}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><Res res={res} /></div>
         <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
           {BUILDINGS.map(b => {
@@ -1069,19 +1310,25 @@ export default function Emberhold() {
           </div>
           {heroes.map(h => {
             const inParty = party.includes(h.id);
+            const isBenched = !!benched[h.id];
             const available = items.filter(it => {
               const holder = Object.entries(equips).find(([, uid]) => uid === it.uid);
               return !holder || holder[0] === h.id;
             });
             return (
               <StatCard key={h.id} unit={{ ...h, hp: h.maxHp }} idKey={`base-${h.id}`} pinned={pinned} setPinned={setPinned} hovered={hovered} setHovered={setHovered}
-                style={{ fontSize: 13, color: C.dim, marginBottom: 10, padding: "6px 22px 6px 6px", borderRadius: 8, background: inParty ? "#241a30" : "#1c1628", border: `1px solid ${inParty ? C.ember + "66" : C.panel2}` }}>
+                style={{ fontSize: 13, color: C.dim, marginBottom: 10, padding: "6px 22px 6px 6px", borderRadius: 8, background: isBenched ? "#1a1620" : inParty ? "#241a30" : "#1c1628", border: `1px solid ${isBenched ? C.red + "44" : inParty ? C.ember + "66" : C.panel2}`, opacity: isBenched ? 0.7 : 1 }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input type="checkbox" checked={inParty} onChange={() => toggleParty(h.id)}
-                    style={{ width: 16, height: 16, accentColor: C.ember, cursor: "pointer" }} />
+                  <input type="checkbox" checked={inParty} disabled={isBenched} onChange={() => toggleParty(h.id)}
+                    style={{ width: 16, height: 16, accentColor: C.ember, cursor: isBenched ? "not-allowed" : "pointer" }} />
                   <span>{h.icon}</span><span style={{ color: C.text, fontWeight: 700 }}>{h.name}</span>
                   <span>{h.cls}</span><span style={{ marginLeft: "auto" }}>❤️{h.maxHp} ⚔️{h.atk} 🔮{h.matk} 💨{h.spd}</span>
                 </div>
+                {isBenched && (
+                  <div style={{ fontSize: 11, color: C.red, marginTop: 4, fontWeight: 700 }}>
+                    🩹 Recovering — sits out the next expedition
+                  </div>
+                )}
                 <div style={{ fontSize: 12, color: C.ember, marginTop: 4 }}>
                   ⚡ {h.ultName} <span style={{ color: C.dim }}>— {h.ultDesc}</span>
                 </div>
@@ -1115,7 +1362,11 @@ export default function Emberhold() {
           })}
         </div>
         <Btn full disabled={party.length !== 3} onClick={startRun}>
-          {party.length === 3 ? "🌫️ Venture into the Forgotten Marshland" : `Select ${3 - party.length} more hero${3 - party.length === 1 ? "" : "es"}`}
+          {party.length === 3 ? "🌫️ Venture into the Forgotten Marshland" : (() => {
+            const available = HERO_DEFS.filter(h => !benched[h.id]).length;
+            if (available < 3) return `Only ${available} heroes available — wait one expedition for recovery`;
+            return `Select ${3 - party.length} more hero${3 - party.length === 1 ? "" : "es"}`;
+          })()}
         </Btn>
         <div style={{ textAlign: "center", marginTop: 14, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
           <button onClick={() => setMusicOn(v => !v)} style={{ background: "transparent", color: musicOn ? C.ember : C.dim, border: `1px solid ${musicOn ? C.ember + "66" : C.panel2}`, borderRadius: 8, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif" }}>
@@ -1156,18 +1407,17 @@ export default function Emberhold() {
       [bossIcon, `Boss — ${region.boss.name}`],
     ];
     const cands = candidatesOf(run);
-    const isCand = (r2, c2) => cands.some(x => !x.boss && !x.converge && x.row === r2 && x.col === c2);
-    const convergeCand = cands.some(x => x.converge);
+    const isCand = (r2, c2) => cands.some(x => !x.boss && x.row === r2 && x.col === c2);
     const bossCand = cands.some(x => x.boss);
     /* a relic was just chosen: shrine candidates are blocked while any
        non-shrine option exists (no back-to-back relic picks) */
     const lastWasShrine = run.lastType === "shrine";
-    const candHasNonShrine = cands.some(x => x.boss || x.converge || run.grid[x.row][x.col] !== "shrine");
+    const candHasNonShrine = cands.some(x => x.boss || run.grid[x.row][x.col] !== "shrine");
     const shrineBlocked = lastWasShrine && candHasNonShrine;
     const SZ = 36;
 
     return (
-      <Shell title={region.name} sub={`Depth ${depthOf(run) + 1} of ${COLS + 2} · Corruption ${Math.round(corruption * 100)}%${run.modifier ? ` · ${run.modifier.name}` : ""} · choose your next step`}>
+      <Shell title={region.name} sub={`${realmOf(run.regionId).icon} ${realmOf(run.regionId).name} · Depth ${depthOf(run) + 1} of ${COLS + 2} · Corruption ${Math.round(corruption * 100)}%${modsOf(run).length ? ` · ${modsOf(run).map(m => m.name).join(" + ")}` : ""} · choose your next step`}>
         <div style={{ overflowX: "auto", paddingBottom: 6, marginBottom: 12 }}>
           <div style={{
             display: "grid", gap: 6, justifyContent: "center",
@@ -1177,7 +1427,7 @@ export default function Emberhold() {
           }}>
             {run.grid.map((rowArr, r2) => rowArr.map((t, c2) => {
               if (!t) return null;
-              const here = run.pos && !run.pos.boss && !run.pos.converge && run.pos.row === r2 && run.pos.col === c2;
+              const here = run.pos && !run.pos.boss && run.pos.row === r2 && run.pos.col === c2;
               const was = run.visited.includes(`${r2}-${c2}`);
               const rawCand = isCand(r2, c2);
               const blocked = rawCand && t === "shrine" && shrineBlocked;
@@ -1196,15 +1446,6 @@ export default function Emberhold() {
                   }}>{blocked ? "🚫" : icons[t]}</div>
               );
             }))}
-            {/* converge waygate */}
-            <div onClick={() => convergeCand && chooseNode({ converge: true })} style={{
-              gridRow: 2, gridColumn: COLS + 1,
-              borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17,
-              background: run.pos?.converge ? C.ember : convergeCand ? C.panel2 : C.panel,
-              border: convergeCand ? `2px solid ${C.umbral}` : `1px solid ${C.umbral}55`,
-              cursor: convergeCand ? "pointer" : "default",
-              animation: convergeCand ? "glowPulse 1.2s infinite" : "none",
-            }}>🌀</div>
             {/* boss */}
             <div onClick={() => bossCand && chooseNode({ boss: true })} style={{
               gridRow: 2, gridColumn: COLS + 2,
@@ -1233,25 +1474,8 @@ export default function Emberhold() {
           )}
         </div>
 
-        <div style={{ background: C.panel, borderRadius: 14, padding: 14, marginBottom: 14, border: `1px solid ${C.panel2}` }}>
-          {run.heroes.map(h => (
-            <div key={h.id} style={{ marginBottom: 8 }}>
-              <div style={{ display: "flex", fontSize: 13, marginBottom: 3 }}>
-                <span style={{ opacity: h.alive ? 1 : 0.35 }}>{h.icon} {h.name}</span>
-                <span style={{ marginLeft: "auto", color: C.dim }}>{h.hp}/{h.maxHp}</span>
-              </div>
-              <Bar val={h.hp} max={h.maxHp} color={h.alive ? C.green : C.red} />
-            </div>
-          ))}
-        </div>
-        {(run.atkMod > 0 || run.modifier || run.relics.length > 0) && (
-          <div style={{ background: "#1c1628", borderRadius: 12, padding: "8px 12px", marginBottom: 10, border: `1px solid ${C.panel2}`, fontSize: 12 }}>
-            <div style={{ color: C.dim, fontSize: 11, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>ACTIVE EFFECTS</div>
-            {run.atkMod > 0 && <div style={{ color: C.green }}>🌟 Event blessing: +{Math.round(run.atkMod * 100)}% attack this run</div>}
-            {run.modifier && <div style={{ color: C.red }}>🌑 {run.modifier.name}: {run.modifier.desc}</div>}
-            {run.relics.length > 0 && <div style={{ color: C.gold }}>Relics: {run.relics.map(r => r.icon + " " + r.name).join(" · ")}</div>}
-          </div>
-        )}
+        <PartyPanel r={run} />
+        <EffectsPanel r={run} />
         <div style={{ textAlign: "center", fontSize: 13, color: C.gold }}>
           Run loot: 🪙{run.gold} 🪵{run.wood} ✨{run.embers}
         </div>
@@ -1314,19 +1538,8 @@ export default function Emberhold() {
           ) : null}
         </div>
 
-        {/* BRACE — fixed bottom, above everything */}
-        {surging && (
-          <div style={{ position: "fixed", bottom: 18, left: 0, right: 0, display: "flex", justifyContent: "center", zIndex: 100, pointerEvents: "none" }}>
-            <button onClick={brace} style={{
-              background: C.red, color: "#fff", border: "none", borderRadius: 14, padding: "16px 56px",
-              fontFamily: "'Cinzel',serif", fontWeight: 900, fontSize: 20, cursor: "pointer", pointerEvents: "auto",
-              animation: "pulse .45s infinite", boxShadow: `0 0 26px ${C.red}cc`,
-            }}>🛡️ BRACE!</button>
-          </div>
-        )}
-
         <div style={{ minHeight: 48, textAlign: "center", fontSize: 13, color: C.gold, marginBottom: 8 }}>
-          {battle.log.slice(-3).map((l, i) => <div key={i}>{l}</div>)}
+          {battle.log.filter(e => (typeof e === "string" ? true : e.level === "major")).slice(-3).map((l, i) => <div key={i}>{typeof l === "string" ? l : l.text}</div>)}
         </div>
 
         {/* heroes: HP bar, attack gauge bar, ult bar + button */}
@@ -1359,6 +1572,16 @@ export default function Emberhold() {
         <div style={{ textAlign: "center", fontSize: 10, color: C.dim, marginTop: 8 }}>
           bars: <span style={{ color: C.green }}>HP</span> · <span style={{ color: C.blue }}>attack charge</span> · <span style={{ color: C.ember }}>ultimate</span>
         </div>
+        {/* BRACE QTE — inline under the bar legend so it sits where the eye is already focused */}
+        <div style={{ minHeight: 56, display: "flex", justifyContent: "center", alignItems: "center", marginTop: 10 }}>
+          {surging && (
+            <button onClick={brace} style={{
+              background: C.red, color: "#fff", border: "none", borderRadius: 14, padding: "14px 48px",
+              fontFamily: "'Cinzel',serif", fontWeight: 900, fontSize: 18, cursor: "pointer",
+              animation: "pulse .45s infinite", boxShadow: `0 0 24px ${C.red}cc`,
+            }}>🛡️ BRACE!</button>
+          )}
+        </div>
       </Shell>
     );
   }
@@ -1367,6 +1590,8 @@ export default function Emberhold() {
   if (screen === "relic" && pendingRelics && run) return (
     <Shell title="A Shrine Hums" sub="Choose one relic — it lasts only this run">
       <MapToggle r={run} />
+      <PartyPanel r={run} />
+      <EffectsPanel r={run} />
       <div style={{ display: "grid", gap: 12, marginTop: 10 }}>
         {pendingRelics.map(r => (
           <div key={r.id} onClick={() => { const r2 = { ...run, relics: [...run.relics, r] }; setPendingRelics(null); backToMap(r2); }}
@@ -1392,6 +1617,8 @@ export default function Emberhold() {
     return (
       <Shell title="A Strange Encounter">
         <MapToggle r={run} />
+        <PartyPanel r={run} />
+        <EffectsPanel r={run} />
         <div style={{ background: C.panel, borderRadius: 14, padding: 18, fontSize: 15, lineHeight: 1.6, marginBottom: 16, fontStyle: "italic", border: `1px solid ${C.panel2}` }}>
           “{eventCard.text}”
         </div>
@@ -1408,7 +1635,11 @@ export default function Emberhold() {
     const good = !/loses|Burned|Ambushed|-\d+ HP|snaps|bile|bruises|swats/i.test(eventResult.text);
     return (
       <Shell title={good ? "Fortune Smiles" : "A Costly Choice"}>
-        {eventResult.run && <MapToggle r={eventResult.run} />}
+        {eventResult.run && <>
+          <MapToggle r={eventResult.run} />
+          <PartyPanel r={eventResult.run} />
+          <EffectsPanel r={eventResult.run} />
+        </>}
         <div style={{ background: C.panel, borderRadius: 14, padding: 20, textAlign: "center", margin: "10px 0 16px", border: `1px solid ${good ? C.umbral : C.red}55` }}>
           <div style={{ fontSize: 34, marginBottom: 10 }}>{good ? "🌟" : "💢"}</div>
           <div style={{ fontSize: 15, lineHeight: 1.6 }}>{eventResult.text}</div>
@@ -1420,22 +1651,24 @@ export default function Emberhold() {
 
   /* WAYGATE */
   if (screen === "waygate" && run) {
-    const isConverge = run.pos?.converge;
+    const isFinal = run.pos?.col === COLS;
     const region = REGIONS[run.regionId];
     return (
-      <Shell title={isConverge ? "🌀 The Last Waygate" : "🌀 A Waygate"}
-        sub={isConverge ? `Every path leads here. Beyond this gate, only ${region.boss.name} remains.` : "A shimmering door home. Beyond it, the dark deepens."}>
+      <Shell title={isFinal ? "🌀 The Last Waygate" : "🌀 A Waygate"}
+        sub={isFinal ? `Beyond this gate, only ${region.boss.name} remains.` : "A shimmering door home. Beyond it, the dark deepens."}>
         <MapToggle r={run} />
+        <PartyPanel r={run} />
+        <EffectsPanel r={run} />
         <div style={{ background: C.panel, borderRadius: 14, padding: 16, textAlign: "center", marginBottom: 16, border: `1px solid ${C.umbral}55` }}>
           <div style={{ fontSize: 13, color: C.green, marginBottom: 8 }}>✨ The gate's light mends the party: +30% HP, and the fallen rise again at 20%.</div>
           <div style={{ fontSize: 13, color: C.dim, marginBottom: 6 }}>Loot secured if you extract now</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>🪙{run.gold} 🪵{run.wood} ✨{run.embers}</div>
           <div style={{ fontSize: 12, color: C.red, marginTop: 8 }}>If your party falls deeper in, you keep only half.</div>
-          {isConverge && <div style={{ fontSize: 12, color: C.gold, marginTop: 6 }}>⚔️ Bosses drop equipment — items can be won nowhere else.</div>}
+          {isFinal && <div style={{ fontSize: 12, color: C.gold, marginTop: 6 }}>⚔️ Bosses drop equipment — items can be won nowhere else.</div>}
         </div>
         <div style={{ display: "grid", gap: 10 }}>
           <Btn full color={C.umbral} onClick={() => finishRun(run, true)}>🏠 Extract — keep everything</Btn>
-          <Btn full onClick={() => isConverge ? chooseNode({ boss: true }) : backToMap()}>{isConverge ? `${region.boss.icon} Face ${region.boss.name}` : "⚔️ Continue — greater rewards ahead"}</Btn>
+          <Btn full onClick={() => isFinal ? chooseNode({ boss: true }) : backToMap()}>{isFinal ? `${region.boss.icon} Face ${region.boss.name}` : "⚔️ Continue — greater rewards ahead"}</Btn>
         </div>
       </Shell>
     );
@@ -1460,6 +1693,11 @@ export default function Emberhold() {
         backToMap();
       }
     };
+    /* normalize legacy string entries to {text, level: "major"} for safety */
+    const norm = cr.log.map(e => typeof e === "string" ? { text: e, level: "major" } : e);
+    const majorCount = norm.filter(e => e.level === "major").length;
+    const detailCount = norm.length - majorCount;
+    const shown = logDetail ? norm : norm.filter(e => e.level === "major");
     return (
       <Shell title={title} sub="Review the battle, then continue your expedition">
         <div style={{ background: C.panel, borderRadius: 14, padding: 16, marginBottom: 14, border: `1px solid ${C.panel2}`, textAlign: "center" }}>
@@ -1468,12 +1706,41 @@ export default function Emberhold() {
             🪙 +{cr.gained.gold} &nbsp; 🪵 +{cr.gained.wood} &nbsp; ✨ +{cr.gained.embers}
           </div>
         </div>
+        {cr.bonusDrop && (
+          <div style={{ background: "#2a2010", borderRadius: 14, padding: 14, marginBottom: 14, border: `1px solid ${C.gold}77`, textAlign: "center" }}>
+            <div style={{ fontSize: 12, color: C.gold, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>🎁 TREASURE CACHE</div>
+            <div style={{ fontSize: 11, color: C.dim, marginBottom: 6, fontStyle: "italic" }}>Your armory is full — the boss yields a hoard instead</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.gold }}>
+              🪙 +{cr.bonusDrop.gold} &nbsp; 🪵 +{cr.bonusDrop.wood} &nbsp; ✨ +{cr.bonusDrop.embers}
+            </div>
+          </div>
+        )}
+        {cr.bossKill && (
+          <div style={{ marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: C.green, fontWeight: 700, letterSpacing: 1, marginBottom: 6, textAlign: "center" }}>✨ VICTORY MENDS THE PARTY — fallen revived at 30%</div>
+            <PartyPanel r={run} />
+          </div>
+        )}
         <div style={{ background: C.panel, borderRadius: 14, padding: 12, marginBottom: 14, border: `1px solid ${C.panel2}` }}>
-          <div style={{ fontSize: 12, color: C.dim, marginBottom: 8, fontWeight: 700, letterSpacing: 1 }}>COMBAT LOG</div>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: C.dim, fontWeight: 700, letterSpacing: 1 }}>COMBAT LOG</div>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+              <button onClick={() => setLogDetail(false)} style={{
+                background: !logDetail ? C.ember : "transparent", color: !logDetail ? "#1a1020" : C.dim,
+                border: `1px solid ${!logDetail ? C.ember : C.panel2}`, borderRadius: 6, padding: "4px 10px",
+                fontSize: 11, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif", fontWeight: 700,
+              }}>Simple ({majorCount})</button>
+              <button onClick={() => setLogDetail(true)} style={{
+                background: logDetail ? C.ember : "transparent", color: logDetail ? "#1a1020" : C.dim,
+                border: `1px solid ${logDetail ? C.ember : C.panel2}`, borderRadius: 6, padding: "4px 10px",
+                fontSize: 11, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif", fontWeight: 700,
+              }}>Detailed ({majorCount + detailCount})</button>
+            </div>
+          </div>
           <div style={{ maxHeight: 260, overflowY: "auto", fontSize: 12, lineHeight: 1.6 }}>
-            {cr.log.length === 0 && <div style={{ color: C.dim }}>No notable events.</div>}
-            {cr.log.map((l, i) => (
-              <div key={i} style={{ color: i % 2 ? C.text : C.dim, padding: "1px 4px" }}>{l}</div>
+            {shown.length === 0 && <div style={{ color: C.dim }}>No notable events.</div>}
+            {shown.map((l, i) => (
+              <div key={i} style={{ color: l.level === "major" ? C.text : C.dim, padding: "1px 4px", fontWeight: l.level === "major" ? 600 : 400 }}>{l.text}</div>
             ))}
           </div>
         </div>
@@ -1548,7 +1815,7 @@ export default function Emberhold() {
 
   /* SUMMARY */
   if (screen === "summary" && summary) return (
-    <Shell title={summary.ogreKill ? "👑 The Ogre King Falls!" : summary.bossKill ? "🏆 Victory!" : summary.extracted ? "Safely Home" : "The Party Has Fallen"}
+    <Shell title={summary.ogreKill ? "👑 The Earthen Realm Is Cleansed!" : summary.bossKill ? "🏆 Victory!" : summary.extracted ? "Safely Home" : "The Party Has Fallen"}
       sub={summary.extracted ? "Your hold grows stronger." : "Survivors limp home with half the spoils."}>
       <div style={{ background: C.panel, borderRadius: 14, padding: 18, textAlign: "center", margin: "14px 0", border: `1px solid ${C.panel2}` }}>
         <div style={{ fontSize: 13, color: C.dim, marginBottom: 8 }}>
@@ -1557,6 +1824,15 @@ export default function Emberhold() {
         <div style={{ fontSize: 20, fontWeight: 700, color: C.gold }}>
           🪙 +{summary.gained.gold} &nbsp; 🪵 +{summary.gained.wood} &nbsp; ✨ +{summary.gained.embers}
         </div>
+        {summary.fallen && summary.fallen.length > 0 && (
+          <div style={{ marginTop: 12, padding: "10px 12px", background: "#2a1620", borderRadius: 10, border: `1px solid ${C.red}66` }}>
+            <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginBottom: 4 }}>🩹 Fallen — recovering at the Hold:</div>
+            <div style={{ fontSize: 13, color: C.text }}>
+              {summary.fallen.map(id => HERO_DEFS.find(h => h.id === id)).filter(Boolean).map(h => `${h.icon} ${h.name}`).join(" · ")}
+            </div>
+            <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>They cannot be selected for the next expedition.</div>
+          </div>
+        )}
         {summary.drops.length > 0 && (
           <div style={{ marginTop: 12, padding: "10px 12px", background: "#3a2412", borderRadius: 10, border: `1px solid ${C.gold}66` }}>
             <div style={{ fontSize: 12, color: C.dim, marginBottom: 4 }}>Equipment claimed from bosses — equip now or later at Your Hold:</div>
