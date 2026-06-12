@@ -1,6 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-/* ============ EMBERHOLD 0.021 — playable prototype ============
+/* ============ EMBERHOLD 0.100 — first playtest draft ============
+   0.100 marks the first version ready for external playtesting.
+   Identical to 0.022 in content; renumbered to signal the
+   milestone.
+
+   New in 0.022:
+   • Two new descent modifiers: Vengeful Spirits (enemies +10%
+     crit) and Stoneskin Blight (enemies +25% defenses).
+   • Phoenix Feather replaced by Marshlight Wisp (+5 evasion).
+   • Tanglevine Charm reworded ("Enemies attack 12% slower").
+   • Stat cards are mobile-first: tap-to-toggle everywhere,
+     larger tap targets, tap the open card to dismiss.
+   • DIFFICULTY UP: Hollow Sovereign 10% chance of 2 basic
+     reinforcements / 25% chance of 1; Herald of Gloaming 10%
+     chance of 1. Combat relics slightly reduced in all regions.
+
+   ============ previous: 0.021 ============
    New in 0.021:
    • Ogre Forest region power reduced 3× → 2.5× (simulation
      showed the 2×→3× jump made the forest a 40-expedition
@@ -44,7 +60,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Alegreya+Sans:wght@400;500;700&display=swap');`;
 
-const VERSION = "0.021";
+const VERSION = "0.100";
 
 /* persistent save (localStorage) — survives the run/battle state isn't saved,
    only your Hold progression: resources, building levels, runs done, the
@@ -193,12 +209,12 @@ const REGIONS = {
     ],
     boss: E("Herald of Gloaming", "💀", 240, 12, 8, 10, 8, 12, 6, 92, 9),
     relics: [
-      { id: "fang", name: "Ashen Fang", icon: "🗡️", desc: "+15% hero attack", mod: { atkPct: 15 } },
-      { id: "idol", name: "Warding Idol", icon: "🗿", desc: "Enemies deal -15% damage", mod: { enemyAtkPct: -15 } },
+      { id: "fang", name: "Ashen Fang", icon: "🗡️", desc: "+12% hero attack", mod: { atkPct: 12 } },
+      { id: "idol", name: "Warding Idol", icon: "🗿", desc: "Enemies deal -12% damage", mod: { enemyAtkPct: -12 } },
       { id: "chalice", name: "Ember Chalice", icon: "🏆", desc: "+20 HP heal after each fight", mod: { healAfterFight: 20 } },
-      { id: "hourglass", name: "Hourglass of Sol", icon: "⏳", desc: "Ultimates charge 20% faster", mod: { ultPct: 20 } },
+      { id: "hourglass", name: "Hourglass of Sol", icon: "⏳", desc: "Ultimates charge 15% faster", mod: { ultPct: 15 } },
       { id: "caravan", name: "Ember Caravan", icon: "🛒", desc: "+15% all resources from fights", mod: { allLootPct: 15 } },
-      { id: "phoenix", name: "Phoenix Feather", icon: "🪶", desc: "First fallen hero revives at 30%", mod: { phoenix: 1 } },
+      { id: "wisp", name: "Marshlight Wisp", icon: "✨", desc: "Heroes +5 evasion", mod: { evaFlat: 5 } },
     ],
     events: [
       { text: "A wounded pilgrim begs for coin. Her eyes glint strangely in the gloom.", a: { label: "Give 20 gold", needGold: 20, fn: s => ({ ...s, gold: s.gold - 20, atkMod: s.atkMod + 0.1, blessing: "She whispers a war-blessing: +10% attack this run." }) }, b: { label: "Walk past", fn: s => ({ ...s, blessing: "You walk past. Her eyes follow you into the dark. Nothing happens." }) } },
@@ -230,11 +246,11 @@ const REGIONS = {
     ],
     boss: E("The Hollow Sovereign", "👁️", 280, 13, 9, 12, 10, 14, 6, 91, 9),
     relics: [
-      { id: "crystalens", name: "Crystal Lens", icon: "🔍", desc: "+12% critical chance", mod: { critFlat: 12 } },
-      { id: "lantern", name: "Spelunker's Lantern", icon: "🏮", desc: "+6 accuracy", mod: { accFlat: 6 } },
-      { id: "quartz", name: "Vein of Quartz", icon: "💠", desc: "Heroes +5 magic defense", mod: { mdefFlat: 5 } },
-      { id: "stalkereye", name: "Stalker's Eye", icon: "👁️", desc: "Heroes +8 evasion", mod: { evaFlat: 8 } },
-      { id: "echocharm", name: "Echoing Charm", icon: "🔔", desc: "Ultimates charge 15% faster", mod: { ultPct: 15 } },
+      { id: "crystalens", name: "Crystal Lens", icon: "🔍", desc: "+10% critical chance", mod: { critFlat: 10 } },
+      { id: "lantern", name: "Spelunker's Lantern", icon: "🏮", desc: "+5 accuracy", mod: { accFlat: 5 } },
+      { id: "quartz", name: "Vein of Quartz", icon: "💠", desc: "Heroes +4 magic defense", mod: { mdefFlat: 4 } },
+      { id: "stalkereye", name: "Stalker's Eye", icon: "👁️", desc: "Heroes +6 evasion", mod: { evaFlat: 6 } },
+      { id: "echocharm", name: "Echoing Charm", icon: "🔔", desc: "Ultimates charge 12% faster", mod: { ultPct: 12 } },
       { id: "hoard", name: "Glittering Hoard", icon: "✨", desc: "+30% all resources from fights", mod: { allLootPct: 30 } },
     ],
     events: [
@@ -268,10 +284,10 @@ const REGIONS = {
     boss: E("The Ogre King", "👑", 300, 15, 10, 4, 7, 12, 4, 90, 9),
     bossAdds: [E("Twin-head Ogre", "👹", 160, 11, 7, 2, 5, 9, 3, 86, 8)],
     relics: [
-      { id: "wolfsblood", name: "Wolfsblood Vial", icon: "🧪", desc: "Heroes +20% attack speed", mod: { spdPct: 20 } },
-      { id: "ironbark", name: "Ironbark Hide", icon: "🛡️", desc: "Heroes +4 defense", mod: { defFlat: 4 } },
-      { id: "tanglecharm", name: "Tanglevine Charm", icon: "🌿", desc: "Enemies 15% slower", mod: { enemySpdPct: -15 } },
-      { id: "hunterseye", name: "Hunter's Eye", icon: "🎯", desc: "Heroes +8 accuracy", mod: { accFlat: 8 } },
+      { id: "wolfsblood", name: "Wolfsblood Vial", icon: "🧪", desc: "Heroes +15% attack speed", mod: { spdPct: 15 } },
+      { id: "ironbark", name: "Ironbark Hide", icon: "🛡️", desc: "Heroes +3 defense", mod: { defFlat: 3 } },
+      { id: "tanglecharm", name: "Tanglevine Charm", icon: "🌿", desc: "Enemies attack 12% slower", mod: { enemySpdPct: -12 } },
+      { id: "hunterseye", name: "Hunter's Eye", icon: "🎯", desc: "Heroes +6 accuracy", mod: { accFlat: 6 } },
       { id: "bounty", name: "Forest Bounty", icon: "🍂", desc: "+20% all resources from fights", mod: { allLootPct: 20 } },
       { id: "mossheart", name: "Moss Heart", icon: "💚", desc: "+30 HP heal after each fight", mod: { healAfterFight: 30 } },
     ],
@@ -310,6 +326,8 @@ const DESCENT_MODS = [
   { id: "hardened", name: "Hardened Hides", desc: "Enemies have +30% HP", mod: { enemyHpPct: 30 } },
   { id: "savage", name: "Savage Hunger", desc: "Enemies deal +20% damage", mod: { enemyAtkPct2: 20 } },
   { id: "mists", name: "Cloying Mists", desc: "Heroes lose 8 accuracy", mod: { heroAccFlat: -8 } },
+  { id: "vengeful", name: "Vengeful Spirits", desc: "Enemies +10% critical chance", mod: { enemyCritFlat: 10 } },
+  { id: "stoneskin", name: "Stoneskin Blight", desc: "Enemies have +25% defenses", mod: { enemyDefPct: 25 } },
 ];
 
 /* equipment — drops ONLY from bosses. Each region's boss drops from its own
@@ -477,16 +495,31 @@ function makeEnemies(regionId, type, depth, modifiers) {
   const dm = aggMods({ modifiers: modifiers || [] });
   const hpMod = 1 + (dm.enemyHpPct / 100);
   const atkMod = 1 + (dm.enemyAtkPct2 / 100);
+  const defMod = 1 + ((dm.enemyDefPct || 0) / 100);
+  const critAdd = dm.enemyCritFlat || 0;
   const mk = base => {
     const hp = Math.round(base.hp * ENEMY_HP_MUL * scale * hpMod);
     return {
       ...base, key: base.name + Math.random().toString(36).slice(2),
       hp, maxHp: hp, gauge: 0,
       atk: Math.round(base.atk * scale * atkMod), matk: Math.round(base.matk * scale * atkMod),
-      def: Math.round(base.def * scale), mdef: Math.round(base.mdef * scale),
+      def: Math.round(base.def * scale * defMod), mdef: Math.round(base.mdef * scale * defMod),
+      crit: base.crit + critAdd,
     };
   };
-  if (type === "boss") return [mk(reg.boss), ...(reg.bossAdds || []).map(mk)];
+  if (type === "boss") {
+    const out = [mk(reg.boss), ...(reg.bossAdds || []).map(mk)];
+    /* chance of basic-enemy reinforcements at region bosses:
+       Herald of Gloaming - 10% chance of 1 add
+       Hollow Sovereign - 10% chance of 2 adds, else 25% chance of 1 add */
+    const roll = Math.random();
+    if (regionId === "marsh" && roll < 0.10) out.push(mk(rnd(reg.basics)));
+    if (regionId === "cave") {
+      if (roll < 0.10) { out.push(mk(rnd(reg.basics)), mk(rnd(reg.basics))); }
+      else if (roll < 0.35) { out.push(mk(rnd(reg.basics))); }
+    }
+    return out;
+  }
   if (type === "elite") return [mk(rnd(reg.elites)), mk(rnd(reg.basics))];
   const n = depth < 3 ? 2 : 3;
   return Array.from({ length: n }, () => mk(rnd(reg.basics)));
@@ -585,24 +618,26 @@ const STAT_ROWS = [
   ["Ult/Atk", u => u.ultName ? `${u.ultPerAtk ?? 20}%` : null],
 ];
 
-function StatCard({ unit, idKey, pinned, setPinned, hovered, setHovered, children, style, onClick, dir = "up", clickOnly = false }) {
-  const show = pinned === idKey || (!clickOnly && hovered === idKey);
+function StatCard({ unit, idKey, pinned, setPinned, hovered, setHovered, children, style, onClick, dir = "up", clickOnly = false, noIcon = false }) {
+  /* mobile-first: stats are tap-to-toggle everywhere (no hover dependency).
+     Bigger tap target on the ⓘ; tapping the open card dismisses it. */
+  const show = pinned === idKey;
   const place = dir === "down" ? { top: "calc(100% + 6px)" } : { bottom: "calc(100% + 6px)" };
   return (
     <div onClick={onClick} style={{ position: "relative", ...style }}>
       {children}
-      <div
-        onMouseEnter={() => { if (!clickOnly) setHovered(idKey); }}
-        onMouseLeave={() => { if (!clickOnly) setHovered(h => (h === idKey ? null : h)); }}
+      {!noIcon && <div
         onClick={e => { e.stopPropagation(); setPinned(p => (p === idKey ? null : idKey)); }}
-        style={{ position: "absolute", top: 2, right: 4, fontSize: 13, color: show ? C.gold : C.dim, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}
+        style={{ position: "absolute", top: 0, right: 0, fontSize: 17, color: show ? C.gold : C.dim, cursor: "pointer", padding: "8px 10px", lineHeight: 1, touchAction: "manipulation" }}
         title="Show stats"
-      >ⓘ</div>
+      >ⓘ</div>}
       {show && (
-        <div style={{
+        <div
+          onClick={e => { e.stopPropagation(); setPinned(null); }}
+          style={{
           position: "absolute", ...place, left: "50%", transform: "translateX(-50%)",
-          background: "#0d0a14", border: `1px solid ${C.gold}66`, borderRadius: 10, padding: "10px 12px",
-          zIndex: 50, width: 150, boxShadow: "0 6px 18px #000a", pointerEvents: "none",
+          background: "#0d0a14", border: `1px solid ${C.gold}66`, borderRadius: 10, padding: "12px 14px",
+          zIndex: 50, width: 170, boxShadow: "0 6px 18px #000a", cursor: "pointer",
         }}>
           <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 700, fontSize: 12, color: C.gold, marginBottom: 6, textAlign: "center" }}>{unit.name}</div>
           {STAT_ROWS.map(([label, fn]) => {
@@ -1316,13 +1351,17 @@ export default function Emberhold() {
               return !holder || holder[0] === h.id;
             });
             return (
-              <StatCard key={h.id} unit={{ ...h, hp: h.maxHp }} idKey={`base-${h.id}`} pinned={pinned} setPinned={setPinned} hovered={hovered} setHovered={setHovered}
-                style={{ fontSize: 13, color: C.dim, marginBottom: 10, padding: "6px 22px 6px 6px", borderRadius: 8, background: isBenched ? "#1a1620" : inParty ? "#241a30" : "#1c1628", border: `1px solid ${isBenched ? C.red + "44" : inParty ? C.ember + "66" : C.panel2}`, opacity: isBenched ? 0.7 : 1 }}>
+              <StatCard key={h.id} unit={{ ...h, hp: h.maxHp }} idKey={`base-${h.id}`} pinned={pinned} setPinned={setPinned} hovered={hovered} setHovered={setHovered} noIcon
+                style={{ fontSize: 13, color: C.dim, marginBottom: 10, padding: 6, borderRadius: 8, background: isBenched ? "#1a1620" : inParty ? "#241a30" : "#1c1628", border: `1px solid ${isBenched ? C.red + "44" : inParty ? C.ember + "66" : C.panel2}`, opacity: isBenched ? 0.7 : 1 }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input type="checkbox" checked={inParty} disabled={isBenched} onChange={() => toggleParty(h.id)}
                     style={{ width: 16, height: 16, accentColor: C.ember, cursor: isBenched ? "not-allowed" : "pointer" }} />
                   <span>{h.icon}</span><span style={{ color: C.text, fontWeight: 700 }}>{h.name}</span>
-                  <span>{h.cls}</span><span style={{ marginLeft: "auto" }}>❤️{h.maxHp} ⚔️{h.atk} 🔮{h.matk} 💨{h.spd}</span>
+                  <span>{h.cls}</span>
+                  <span onClick={e => { e.stopPropagation(); setPinned(p => (p === `base-${h.id}` ? null : `base-${h.id}`)); }}
+                    style={{ fontSize: 16, color: pinned === `base-${h.id}` ? C.gold : C.dim, cursor: "pointer", padding: "6px 8px", margin: "-6px 0", lineHeight: 1, touchAction: "manipulation" }}
+                    title="Show stats">ⓘ</span>
+                  <span style={{ marginLeft: "auto" }}>❤️{h.maxHp} ⚔️{h.atk} 🔮{h.matk} 💨{h.spd}</span>
                 </div>
                 {isBenched && (
                   <div style={{ fontSize: 11, color: C.red, marginTop: 4, fontWeight: 700 }}>
