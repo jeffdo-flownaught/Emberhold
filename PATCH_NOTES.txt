@@ -5,6 +5,17 @@ Versioning: numbered releases (0.100, 0.101, ...) mark playtest milestones.
 Interim fixes append letters (0.101a, 0.101b, ...) until the next number.
 
 ----------------------------------------------------------------------
+v0.104a
+----------------------------------------------------------------------
+- Cinder Nova burn now caps at 5 stacks per enemy. Further novas
+  still deal their direct hit but stop adding burn beyond the cap.
+- Leaderboard has a Simple / Details toggle (Simple by default).
+  Details view shows each run's descent debuffs, relic buffs, and
+  event attack buffs beneath the entry.
+- Enemy gold drops reduced 10% (gold was accumulating too fast).
+- Syrene's base magic attack reduced from 16 to 13.
+
+----------------------------------------------------------------------
 v0.104 — playtest patch 4
 ----------------------------------------------------------------------
 Consolidates the 0.103 milestone and its 0.103a-0.103c patches.
