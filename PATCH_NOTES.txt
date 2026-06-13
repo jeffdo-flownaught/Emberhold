@@ -5,40 +5,62 @@ Versioning: numbered releases (0.100, 0.101, ...) mark playtest milestones.
 Interim fixes append letters (0.101a, 0.101b, ...) until the next number.
 
 ----------------------------------------------------------------------
-v0.102 — playtest patch 2
+v0.103 — playtest patch 3
 ----------------------------------------------------------------------
-Consolidates the 0.101a-0.101l interim patches into a milestone.
+Consolidates the 0.102 milestone and its 0.102a-0.102l interim
+patches.
 
-COMBAT & BOSSES
-- ENRAGE: all bosses enrage if a fight runs past 45 seconds
-  (anti-stall). The Ogre King ALSO enrages early when it drops
-  below 30% HP. While enraged, all enemies in the fight deal +50%
-  attack, attack +30% faster, and Umbral Surges wind up more
-  often, with a pulsing banner.
-- Attack charge now resets to zero at the start of every fight
-  (ultimate charge still carries within a run).
+HEROES & ULTIMATES
+- Magic ultimates scale with the caster's magic attack:
+    Cinder Nova (Syrene): burn deals 0.1 x matk per second per cast
+      (rounded down, min 1), plus the existing nova damage.
+    Sanctuary (Liora): heals the whole party for her magic attack.
+    Consecration (Aldric): +50% party defenses 4s, heals the
+      lowest-HP ally for his magic attack.
+    Wildkin Bloom (Thornwild): focused enemy takes 0.75 x matk and
+      is slowed; Regrowth heals the lowest ally for his magic
+      attack total over 3 seconds.
+  All scale further with run attack buffs and the +2%/depth ult
+  bonus.
+- Ultimate descriptions on hero cards show the live calculated
+  values (e.g. "Heal the party for 14 HP") rather than "matk",
+  updating as magic attack grows with forge upgrades and gear.
 
-EVENTS
-- Combat-buff events use a risk/reward ladder (bigger buff = worse
-  odds), none are 50/50: Worldflame +10% atk at 20%, cavern echo
-  +8% at 40%, wounded pilgrim +6% at 60%, wolf pup +6% at 60%.
-  (Pilgrim and wolf pup spend their gold whether or not the buff
-  lands.)
-- Events never repeat back-to-back within a region.
+COMBAT
+- Enrage: every boss enrages if a fight runs past 45 seconds
+  (anti-stall). The Ogre King ALSO enrages early below 30% HP.
+  While enraged, all enemies deal +50% attack, attack +30%
+  faster, and surges wind up more often, with a pulsing banner.
+- An Umbral Surge now fizzles if the enemy charging it dies during
+  the windup; the BRACE prompt clears.
+- When no enemy is focused, hero basic attacks (and Thornwild's
+  Wildkin Bloom) strike a random living enemy instead of always
+  the first; Kaelis's Sever still defaults to the highest-HP foe.
+
+HOLD / BUILDINGS
+- Barracks also raises hero defense and magic defense by +5% per
+  level (on top of +15% HP per level) — a way to scale defenses.
+- Building cards read "Level X" and "/ level" (Forge, Barracks,
+  Arcanum, Worldflame Shard) instead of "Depth X" / "/ depth".
+- Reset Hold works in every environment (including the Claude app
+  where storage/reload can be blocked): it resets all game state
+  directly and uses a two-tap confirm instead of a browser popup.
 
 MAP GENERATION
-- Enemy-encounter requirement set to 75% of map nodes.
-- Hard maximum of 3 waygates per map (the final-column waygate
-  counts as one); no three waygate columns in a row.
-- Shrine count: ~90% one shrine, ~10% two, never three.
-- Event count: ~60% one event, ~40% two, never three.
-- Shrine and event counts are fixed up front and exempt from the
-  combat-floor conversion, so their distributions stay exact;
-  only surplus waygates convert to fights.
+- Regions 2-3 (cave, forest) widen the required mid-map waygate
+  band from cols 4-7 to cols 3-7, allowing an earlier recovery
+  point; the marsh keeps cols 4-7.
 
-UI
-- Enemy debuff badges (burn/slow) sit on their own line below the
-  name, no longer overlapping the name or HP bar.
+EVENTS
+- Combat-buff events use a risk/reward ladder (none 50/50):
+  Worldflame +10% atk at 20%, cavern echo +8% at 40%, wounded
+  pilgrim +6% at 60%, wolf pup +6% at 60%.
+
+UI / LAYOUT
+- Combat panels no longer shift during a fight. Fixed footprints
+  for: ult buttons (charging/ready/pre-battle), the active-buffs
+  row, the combat-log row, enemy name/status badges, the focus
+  indicator, and the enrage banner.
 
 ----------------------------------------------------------------------
 v0.101 — playtest patch 1

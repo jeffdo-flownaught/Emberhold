@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Alegreya+Sans:wght@400;500;700&display=swap');`;
 
-const VERSION = "0.102";
+const VERSION = "0.103";
 
 /* persistent save (localStorage) — survives the run/battle state isn't saved,
    only your Hold progression: resources, building levels, runs done, the
@@ -123,11 +123,11 @@ const COLS = 8;                 // encounter columns; +converge waygate +boss = 
 const HERO_DEFS = [
   { id: "bran", name: "Branwen", cls: "Vanguard", icon: "🛡️", baseHp: 130, atk: 10, def: 12, matk: 4, mdef: 10, crit: 5, eva: 5, acc: 90, spd: 10, ultName: "Taunt", ultDesc: "Enemies attack Branwen for 2s; his defenses are doubled" },
   { id: "kael", name: "Kaelis", cls: "Blade", icon: "⚔️", baseHp: 85, atk: 15, def: 6, matk: 4, mdef: 5, crit: 5, eva: 12, acc: 95, spd: 14, ultName: "Sever", ultDesc: "Strike focused enemy 3× damage" },
-  { id: "syra", name: "Syrene", cls: "Pyromancer", icon: "🔥", baseHp: 70, atk: 6, def: 4, matk: 16, mdef: 12, crit: 12, eva: 8, acc: 92, spd: 12, ultName: "Cinder Nova", ultDesc: "Magic damage to ALL enemies + Burn (2 dmg/sec, stacks)" },
-  { id: "prie", name: "Liora", cls: "Priestess", icon: "🙏", baseHp: 75, atk: 5, def: 5, matk: 12, mdef: 14, crit: 5, eva: 8, acc: 92, spd: 11, ultName: "Sanctuary", ultDesc: "Heal the party 15 HP" },
+  { id: "syra", name: "Syrene", cls: "Pyromancer", icon: "🔥", baseHp: 70, atk: 6, def: 4, matk: 16, mdef: 12, crit: 12, eva: 8, acc: 92, spd: 12, ultName: "Cinder Nova", ultDesc: "Magic damage to ALL enemies + Burn (0.1×matk dmg/sec, stacks)" },
+  { id: "prie", name: "Liora", cls: "Priestess", icon: "🙏", baseHp: 75, atk: 5, def: 5, matk: 12, mdef: 14, crit: 5, eva: 8, acc: 92, spd: 11, ultName: "Sanctuary", ultDesc: "Heal the party for magic attack" },
   { id: "rang", name: "Fenwick", cls: "Ranger", icon: "🏹", baseHp: 80, atk: 14, def: 5, matk: 3, mdef: 6, crit: 15, eva: 14, acc: 97, spd: 18, ultName: "Quickdraw", ultDesc: "Fenwick gains +50% attack speed for 3s" },
-  { id: "pala", name: "Aldric", cls: "Paladin", icon: "⚜️", baseHp: 110, atk: 11, def: 10, matk: 8, mdef: 10, crit: 8, eva: 7, acc: 92, spd: 12, ultName: "Consecration", ultDesc: "Party +50% defenses 4s · heal lowest-HP ally 15" },
-  { id: "drui", name: "Thornwild", cls: "Druid", icon: "🌿", baseHp: 90, atk: 8, def: 8, matk: 12, mdef: 10, crit: 8, eva: 8, acc: 90, spd: 13, ultName: "Wildkin Bloom", ultDesc: "Focused enemy: -50% atk speed 4s & 15 dmg · Regrowth: lowest ally heals 18 over 3s" },
+  { id: "pala", name: "Aldric", cls: "Paladin", icon: "⚜️", baseHp: 110, atk: 11, def: 10, matk: 8, mdef: 10, crit: 8, eva: 7, acc: 92, spd: 12, ultName: "Consecration", ultDesc: "Party +50% defenses 4s · heal lowest-HP ally for magic attack" },
+  { id: "drui", name: "Thornwild", cls: "Druid", icon: "🌿", baseHp: 90, atk: 8, def: 8, matk: 12, mdef: 10, crit: 8, eva: 8, acc: 90, spd: 13, ultName: "Wildkin Bloom", ultDesc: "Focused enemy: -50% atk speed 4s & 0.75×matk dmg · Regrowth: lowest ally heals magic attack over 3s" },
 ];
 
 /* ---------- enemies ---------- */
@@ -303,12 +303,16 @@ const rnd = a => a[Math.floor(Math.random() * a.length)];
 const shuffle = a => [...a].sort(() => Math.random() - 0.5);
 const aggRelics = relics => relics.reduce((a, r) => { for (const k in r.mod) a[k] = (a[k] || 0) + r.mod[k]; return a; }, {});
 
-function makeRunGrid() {
+function makeRunGrid(regionId) {
   /* Grid is now 3 rows x (COLS+1) cols. The last col (index COLS) is the
      "final waygate column": row 1 (middle) is ALWAYS a waygate; rows 0 and 2
      are random non-waygate encounters. Every path can choose between healing
      at the waygate or taking the alternate encounter for resources. */
   const grid = Array.from({ length: 3 }, () => Array(COLS + 1).fill("fight"));
+  /* required mid-map waygate band: cols 4-7 normally, widened to cols 3-7 in
+     regions 2-3 (cave, forest) so the harder regions can offer a recovery
+     point one column earlier. */
+  const WG_BAND_LO = regionIndexOf(regionId) >= 1 ? 3 : 4;
 
   // gaps in cols 1 to COLS-1 only (col 0 and col COLS stay fully populated)
   const gapCols = shuffle(Array.from({ length: COLS - 1 }, (_, i) => i + 1)).slice(0, 3);
@@ -322,13 +326,14 @@ function makeRunGrid() {
 
   /* waygates: MAX 3 per map total. The final column (COLS) always holds one
      waygate (its middle row), so we place at most 2 scattered waygates here.
-     AT LEAST ONE scattered waygate must be in cols 4-7 (depths 5-8). */
+     AT LEAST ONE scattered waygate must be in the required band (cols
+     WG_BAND_LO..7). */
   const MAX_WAYGATES = 3;
   const waygateCols = new Set();
   let forcedOne = false;
   for (const { r, c } of shuffle(fightCells())) {
     if (forcedOne) break;
-    if (c >= 4 && c <= 7) { grid[r][c] = "waygate"; waygateCols.add(c); forcedOne = true; }
+    if (c >= WG_BAND_LO && c <= 7) { grid[r][c] = "waygate"; waygateCols.add(c); forcedOne = true; }
   }
   for (const { r, c } of shuffle(fightCells())) {
     if (waygateCols.size >= MAX_WAYGATES - 1) break; // -1 reserves the final-column waygate
@@ -387,13 +392,13 @@ function makeRunGrid() {
   };
   const allWg = collectByType("waygate");
   const wgFinal = ({ r, c }) => r === 1 && c === COLS;
-  const wg47 = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= 4 && c <= 7);
-  const wgLow = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= 0 && c <= 3);
+  const wg47 = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= WG_BAND_LO && c <= 7);
+  const wgLow = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= 0 && c < WG_BAND_LO);
   /* conversion pool: surplus nodes become fights to reach the combat floor.
      Shrines and events are EXEMPT — their counts were chosen up front (70/30
      for shrines, 60/40 for events) and must stay exact, so only surplus
-     waygates convert. Protected: 1 waygate in cols 4-7 + the final-column
-     waygate. */
+     waygates convert. Protected: 1 waygate in the required band (cols
+     WG_BAND_LO..7) + the final-column waygate. */
   const wgExcess = [...shuffle(wgLow), ...shuffle(wg47).slice(0, Math.max(0, wg47.length - 1))];
   const pool = [...wgExcess];
   let { combat, total } = count();
@@ -422,11 +427,12 @@ function makeRunGrid() {
   if (!has("shrine")) placeOne("shrine");
   if (!has("event")) placeOne("event");
 
-  /* defensive — make absolutely sure we have ≥1 waygate in cols 4-7 */
-  let hasWg47 = false;
-  for (let r = 0; r < 3; r++) for (let c = 4; c <= 7; c++) if (grid[r][c] === "waygate") hasWg47 = true;
-  if (!hasWg47) {
-    outer: for (const c of shuffle([4, 5, 6, 7])) {
+  /* defensive — make absolutely sure we have ≥1 waygate in the required band */
+  let hasWgBand = false;
+  for (let r = 0; r < 3; r++) for (let c = WG_BAND_LO; c <= 7; c++) if (grid[r][c] === "waygate") hasWgBand = true;
+  if (!hasWgBand) {
+    const bandCols = []; for (let c = WG_BAND_LO; c <= 7; c++) bandCols.push(c);
+    outer: for (const c of shuffle(bandCols)) {
       for (const r of shuffle([0, 1, 2])) {
         if (grid[r][c] === "fight") { grid[r][c] = "waygate"; break outer; }
       }
@@ -552,6 +558,28 @@ const Res = ({ res }) => (
     <span style={{ color: C.ember }}>✨ {res.embers}</span>
   </div>
 );
+
+/* Build an ultimate description with the caster's CURRENT magic-attack values
+   substituted in, instead of the generic "matk" placeholder. `matk` should be
+   the hero's effective magic attack at the point of display; an optional
+   `mult` applies run/ult scaling so the number matches live combat. */
+function ultDescLive(h, matk, mult = 1) {
+  const m = Math.round((matk ?? h.matk) * mult);
+  switch (h.id) {
+    case "syra": {
+      const burn = Math.max(1, Math.floor(0.1 * m));
+      return `Magic damage to ALL enemies + Burn (${burn} dmg/sec, stacks)`;
+    }
+    case "prie":
+      return `Heal the party for ${m} HP`;
+    case "pala":
+      return `Party +50% defenses 4s · heal lowest-HP ally for ${m} HP`;
+    case "drui":
+      return `Focused enemy: -50% atk speed 4s & ${Math.round(0.75 * m)} dmg · Regrowth: lowest ally heals ${m} over 3s`;
+    default:
+      return h.ultDesc;
+  }
+}
 
 /* effective stats — apply every active modifier so tooltips show what
    actually goes into combat math, not just base values */
@@ -680,6 +708,7 @@ export default function Emberhold() {
   const [combatReview, setCombatReview] = usePersistent("combatReview", null);
   const [floats, setFloats] = useState([]);
   const [legendOpen, setLegendOpen] = useState(true);
+  const [resetArmed, setResetArmed] = useState(false);
   const [pinned, setPinned] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [showMap, setShowMap] = useState(false);
@@ -688,6 +717,35 @@ export default function Emberhold() {
   const [musicVol, setMusicVol] = usePersistent("musicVol", 0.5);
 
   useEffect(() => { MUSIC.setVolume(musicVol); }, [musicVol]);
+
+  /* Full reset that works in EVERY environment — including sandboxed
+     contexts (e.g. the Claude app) where localStorage and location.reload()
+     may be blocked. We reset all React state to defaults directly so the
+     button never silently fails, then also clear the save and attempt a
+     reload for normal browsers. */
+  const resetHold = () => {
+    setRes({ gold: 100, wood: 60, embers: 4 });
+    setBld({ forge: 1, barracks: 1, arcanum: 1, shard: 1 });
+    setRunsDone(0);
+    setForestUnlocked(false);
+    setCaveUnlocked(false);
+    setItems([]);
+    setEquips({});
+    setParty(["bran", "kael", "syra"]);
+    setBenched({});
+    setLastModifierId(null);
+    setRun(null);
+    setBattle(null);
+    setPendingRelics(null);
+    setEventCard(null);
+    setEventResult(null);
+    setSummary(null);
+    setCombatReview(null);
+    setEquipPicker(null);
+    setScreen("base");
+    clearSave();
+    try { location.reload(); } catch {}
+  };
   useEffect(() => {
     MUSIC.setEnabled(musicOn);
     if (!musicOn) return;
@@ -699,10 +757,10 @@ export default function Emberhold() {
   }, [screen, musicOn]);
 
   const BUILDINGS = [
-    { id: "forge", name: "Forge", icon: "⚒️", desc: "+12% hero attack & magic attack / depth", cost: l => ({ gold: 45 * l, wood: 30 * l }) },
-    { id: "barracks", name: "Barracks", icon: "🏰", desc: "+15% hero HP / depth", cost: l => ({ gold: 50 * l, wood: 40 * l }) },
-    { id: "arcanum", name: "Arcanum", icon: "🔮", desc: "+8% ult charge speed / depth", cost: l => ({ gold: 80 * l, embers: 2 * l }) },
-    { id: "shard", name: "Worldflame Shard", icon: "🔥", desc: "+10% all loot / depth", cost: l => ({ embers: 4 * l, wood: 50 * l }) },
+    { id: "forge", name: "Forge", icon: "⚒️", desc: "+12% hero attack & magic attack / level", cost: l => ({ gold: 45 * l, wood: 30 * l }) },
+    { id: "barracks", name: "Barracks", icon: "🏰", desc: "+15% hero HP & +5% defenses / level", cost: l => ({ gold: 50 * l, wood: 40 * l }) },
+    { id: "arcanum", name: "Arcanum", icon: "🔮", desc: "+8% ult charge speed / level", cost: l => ({ gold: 80 * l, embers: 2 * l }) },
+    { id: "shard", name: "Worldflame Shard", icon: "🔥", desc: "+10% all loot / level", cost: l => ({ embers: 4 * l, wood: 50 * l }) },
   ];
 
   const heroStats = useCallback(() => HERO_DEFS.map(h => {
@@ -715,7 +773,8 @@ export default function Emberhold() {
       maxHp: Math.round(h.baseHp * (1 + 0.15 * (bld.barracks - 1))) + (m.hp || 0),
       atk: Math.round(h.atk * (1 + 0.12 * (bld.forge - 1))) + (m.atk || 0),
       matk: Math.round(h.matk * (1 + 0.12 * (bld.forge - 1))) + (m.matk || 0),
-      def: h.def + (m.def || 0), mdef: h.mdef + (m.mdef || 0),
+      def: Math.round(h.def * (1 + 0.05 * (bld.barracks - 1))) + (m.def || 0),
+      mdef: Math.round(h.mdef * (1 + 0.05 * (bld.barracks - 1))) + (m.mdef || 0),
       crit: h.crit + (m.crit || 0), eva: h.eva + (m.eva || 0), acc: h.acc + (m.acc || 0),
       spd: h.spd + (m.spd || 0),
       item: def ? { ...def, uid } : null,
@@ -734,7 +793,7 @@ export default function Emberhold() {
     const heroes = heroStats().filter(h => party.includes(h.id)).map(h => ({ ...h, hp: h.maxHp, ult: 0, gauge: 0, alive: true }));
     setRun({
       regionId: "marsh", modifier: null, modifiers: [], drops: [],
-      grid: makeRunGrid(), pos: null, visited: [],
+      grid: makeRunGrid("marsh"), pos: null, visited: [],
       heroes, gold: 0, wood: 0, embers: 0, relics: [], atkMod: 0, phoenixSpent: 0, lastEventText: null,
       corruptionBaseline: 0,
     });
@@ -850,8 +909,16 @@ export default function Emberhold() {
       const defAdj = ag.defFlat || 0;
 
       /* heroes: attack when gauge fills; each attack SWING charges the ult.
-         Quickdraw haste applies ONLY to Fenwick */
-      const focusTarget = () => enemies.find(e => e.key === b.focus && e.hp > 0) || enemies.find(e => e.hp > 0);
+         Quickdraw haste applies ONLY to Fenwick.
+         Targeting: the focused enemy if one is set and alive; otherwise a
+         RANDOM living enemy (re-rolled per swing), so attacks spread out
+         instead of all piling onto the first enemy in the list. */
+      const focusTarget = () => {
+        const focused = enemies.find(e => e.key === b.focus && e.hp > 0);
+        if (focused) return focused;
+        const live = enemies.filter(e => e.hp > 0);
+        return live.length ? rnd(live) : null;
+      };
       heroes.forEach(h => {
         if (!h.alive) return;
         const haste = h.id === "rang" && tick < b.hasteUntil ? 1.5 : 1;
@@ -895,10 +962,16 @@ export default function Emberhold() {
 
       /* UMBRAL SURGE quick-time event */
       if (surge) {
-        surge.ticksLeft -= 1;
-        if (surge.ticksLeft <= 0) {
-          const src = enemies.find(e => e.key === surge.enemyKey && e.hp > 0);
-          if (src) {
+        /* if the enemy charging the surge dies mid-windup (hero hit, burn,
+           DoT), the surge fizzles — cancel it and clear the BRACE prompt */
+        const charger = enemies.find(e => e.key === surge.enemyKey);
+        if (!charger || charger.hp <= 0) {
+          log.push({ text: "💨 The winding-up enemy fell — the surge dissipates.", level: "major" });
+          surge = null;
+        } else {
+          surge.ticksLeft -= 1;
+          if (surge.ticksLeft <= 0) {
+            const src = charger;
             const live = heroes.filter(h => h.alive);
             if (live.length) {
               const bran = heroes.find(h => h.id === "bran" && h.alive);
@@ -912,8 +985,8 @@ export default function Emberhold() {
               log.push({ text: surge.braced ? `🛡️ BRACED! ${t.name} takes only ${dmg}` : `💥 Surge hits ${t.name} for ${dmg}!`, level: "major" });
               addFloat(surge.braced ? `-${dmg} 🛡️` : `-${dmg}!`, surge.braced ? C.umbral : C.red);
             }
+            surge = null;
           }
-          surge = null;
         }
       } else if (tick > 16 && tick % (enraged ? 24 : 36) === 0) {
         const live = enemies.filter(e => e.hp > 0);
@@ -1001,26 +1074,26 @@ export default function Emberhold() {
       }
     }
     if (h.id === "syra") {
+      const effMatk = Math.round(h.matk * atkMul);
+      /* Burn dps scales with magic attack: 0.1 × matk per cast (rounded down),
+         minimum 1. Tracked as accumulated dps so sources can differ. */
+      const burnPerCast = Math.max(1, Math.floor(0.1 * effMatk));
       enemies = enemies.map(e => {
         if (e.hp <= 0) return e;
-        const { dmg } = rollDamage({ ...h, matk: Math.round(h.matk * atkMul) }, e, 2 * ultScale);
-        /* Burn: stacking DoT, persistent for the whole fight. Burn damage is
-           tracked as accumulated dps (burnDps) rather than stacks × constant,
-           so different burn sources can deal different damage per second.
-           Syrene's nova applies 2 dmg/sec per cast. burnStacks is display-only. */
-        return { ...e, hp: Math.max(0, e.hp - dmg), burnDps: (e.burnDps || 0) + 2, burnStacks: (e.burnStacks || 0) + 1 };
+        const { dmg } = rollDamage({ ...h, matk: effMatk }, e, 2 * ultScale);
+        return { ...e, hp: Math.max(0, e.hp - dmg), burnDps: (e.burnDps || 0) + burnPerCast, burnStacks: (e.burnStacks || 0) + 1 };
       });
-      log.push({ text: "🔥 Cinder Nova engulfs all foes — they BURN!", level: "major" }); addFloat("🔥 NOVA", C.ember);
+      log.push({ text: `🔥 Cinder Nova engulfs all foes — they BURN (+${burnPerCast}/sec)!`, level: "major" }); addFloat("🔥 NOVA", C.ember);
     }
     if (h.id === "prie") {
-      const heal = Math.round(15 * ultScale);
+      const heal = Math.round(h.matk * atkMul * ultScale);
       heroes = heroes.map(x => x.alive ? { ...x, hp: Math.min(x.maxHp, x.hp + heal) } : x);
       log.push({ text: `🙏 Sanctuary! Party healed +${heal}`, level: "major" }); addFloat(`+${heal} ❤️`, C.green);
     }
     if (h.id === "rang") { hasteUntil = b.tick + Math.round(12 * ultScale); log.push({ text: "🏹 Quickdraw! Fenwick attacks 50% faster", level: "major" }); addFloat("🏹 HASTE", C.blue); }
     if (h.id === "pala") {
       consecUntil = b.tick + Math.round(16 * ultScale);
-      const heal = Math.round(15 * ultScale);
+      const heal = Math.round(h.matk * atkMul * ultScale);
       const living = heroes.map((x, i) => ({ x, i })).filter(v => v.x.alive);
       let healedName = "";
       if (living.length) {
@@ -1033,20 +1106,21 @@ export default function Emberhold() {
     }
     if (h.id === "drui") {
       const live = enemies.filter(e => e.hp > 0);
-      const t = enemies.find(e => e.key === b.focus && e.hp > 0) || live[0];
+      const t = enemies.find(e => e.key === b.focus && e.hp > 0) || (live.length ? rnd(live) : null);
       if (t) {
         slowedKey = t.key; slowUntil = b.tick + Math.round(16 * ultScale);
-        const dmg = Math.round(15 * ultScale);
+        const effMatk = Math.round(h.matk * atkMul * ultScale);
+        const dmg = Math.round(0.75 * effMatk);
         const targetIdx = enemies.findIndex(e => e.key === t.key);
         enemies[targetIdx] = { ...enemies[targetIdx], hp: Math.max(0, enemies[targetIdx].hp - dmg) };
-        /* Regrowth: heal-over-time on the lowest-HP ally — 6/sec for 3s
-           (18 total, slightly more than Sanctuary's 15 per ally) */
+        /* Regrowth: heal-over-time on the lowest-HP ally — total = magic attack,
+           spread over 3 seconds (ticks every 4th tick = ~3 ticks). */
         const livingHeroes = heroes.map((h2, i2) => ({ h: h2, i: i2 })).filter(x => x.h.alive);
         if (livingHeroes.length) {
           const lowest = livingHeroes.reduce((a, c) => (c.h.hp / c.h.maxHp) < (a.h.hp / a.h.maxHp) ? c : a);
           hotHeroId = heroes[lowest.i].id;
           hotUntil = b.tick + Math.round(12 * ultScale);
-          hotPerSec = Math.round(6 * ultScale);
+          hotPerSec = Math.max(1, Math.round(effMatk / 3));
           log.push({ text: `🌿 Wildkin Bloom! ${t.name} -${dmg} & slowed · Regrowth on ${heroes[lowest.i].name} (+${hotPerSec}/sec)`, level: "major" });
           addFloat(`-${dmg} 🌿`, C.green);
         }
@@ -1137,7 +1211,7 @@ export default function Emberhold() {
     setLastModifierId(m.id);
     const heroes = r.heroes.map(h => h.alive ? { ...h, hp: Math.min(h.maxHp, h.hp + Math.round(h.maxHp * 0.3)), gauge: 0, ult: 0 } : h);
     const carriedBaseline = corruption / 3;
-    setRun({ ...r, regionId: nxt, modifier: m, modifiers: [...active, m], grid: makeRunGrid(), pos: null, visited: [], heroes, corruptionBaseline: carriedBaseline, lastEventText: null });
+    setRun({ ...r, regionId: nxt, modifier: m, modifiers: [...active, m], grid: makeRunGrid(nxt), pos: null, visited: [], heroes, corruptionBaseline: carriedBaseline, lastEventText: null });
     setScreen("modifier");
   };
 
@@ -1384,7 +1458,7 @@ export default function Emberhold() {
               <div key={b.id} style={{ background: C.panel, borderRadius: 14, padding: 14, display: "flex", alignItems: "center", gap: 12, border: `1px solid ${C.panel2}` }}>
                 <div style={{ fontSize: 26 }}>{b.icon}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700 }}>{b.name} <span style={{ color: C.gold }}>Depth {lvl}</span></div>
+                  <div style={{ fontWeight: 700 }}>{b.name} <span style={{ color: C.gold }}>Level {lvl}</span></div>
                   <div style={{ fontSize: 12, color: C.dim }}>{b.desc}</div>
                 </div>
                 <Btn small disabled={!can} onClick={() => upgrade(b)}>
@@ -1426,7 +1500,7 @@ export default function Emberhold() {
                   </div>
                 )}
                 <div style={{ fontSize: 12, color: C.ember, marginTop: 4 }}>
-                  ⚡ {h.ultName} <span style={{ color: C.dim }}>— {h.ultDesc}</span>
+                  ⚡ {h.ultName} <span style={{ color: C.dim }}>— {ultDescLive(h, h.matk)}</span>
                 </div>
                 <div onClick={() => setEquipPicker(p => (p === h.id ? null : h.id))}
                   style={{ marginTop: 5, fontSize: 12, cursor: "pointer", color: h.item ? C.gold : C.dim, background: C.panel, borderRadius: 8, padding: "5px 8px", border: `1px dashed ${h.item ? C.gold : C.panel2}66`, display: "inline-block" }}>
@@ -1469,11 +1543,10 @@ export default function Emberhold() {
             {musicOn ? "🎵 Music On" : "🔇 Music Off"}
           </button>
           <button onClick={() => {
-            if (confirm("Reset your Hold? This wipes all progress (resources, buildings, items, unlocks) and cannot be undone.")) {
-              clearSave(); location.reload();
-            }
-          }} style={{ background: "transparent", color: C.dim, border: `1px solid ${C.panel2}`, borderRadius: 8, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif" }}>
-            ⚠️ Reset Hold (wipes save)
+            if (resetArmed) { resetHold(); }
+            else { setResetArmed(true); setTimeout(() => setResetArmed(false), 4000); }
+          }} style={{ background: resetArmed ? C.red : "transparent", color: resetArmed ? "#fff" : C.dim, border: `1px solid ${resetArmed ? C.red : C.panel2}`, borderRadius: 8, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif" }}>
+            {resetArmed ? "⚠️ Tap again to confirm — wipes ALL progress" : "⚠️ Reset Hold (wipes save)"}
           </button>
         </div>
         {musicOn && (
@@ -1588,9 +1661,13 @@ export default function Emberhold() {
     return (
       <Shell title={battle.type === "boss" ? REGIONS[run.regionId].boss.name.toUpperCase() : battle.type === "elite" ? "Elite Encounter" : "Ambush"}
         sub={battle.started ? "Tap an enemy to focus fire · Tap ⓘ for stats · Tap glowing ults to cast" : "Tap ⓘ to inspect your foes, then begin when ready"}>
-        {battle.enraged && (
-          <div style={{ textAlign: "center", marginBottom: 10, padding: "6px 12px", background: "#2a1015", borderRadius: 10, border: `1px solid ${C.red}`, color: C.red, fontWeight: 700, fontSize: 13, animation: "pulse 1s infinite" }}>
-            😡 ENRAGED — the boss strikes harder and faster!
+        {battle.type === "boss" && (
+          <div style={{ height: 42, marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {battle.enraged && (
+              <div style={{ width: "100%", textAlign: "center", padding: "6px 12px", boxSizing: "border-box", background: "#2a1015", borderRadius: 10, border: `1px solid ${C.red}`, color: C.red, fontWeight: 700, fontSize: 13, animation: "pulse 1s infinite" }}>
+                😡 ENRAGED — the boss strikes harder and faster!
+              </div>
+            )}
           </div>
         )}
         {/* enemies */}
@@ -1604,35 +1681,34 @@ export default function Emberhold() {
                 style={{
                   background: C.panel, borderRadius: 12, padding: 10, width: 96, textAlign: "center",
                   opacity: e.hp > 0 ? 1 : 0.25, cursor: e.hp > 0 ? "pointer" : "default",
-                  border: focused ? `2px solid ${C.gold}` : isSurger ? `2px solid ${C.red}` : `1px solid ${C.umbral}33`,
+                  border: `2px solid ${focused ? C.gold : isSurger ? C.red : C.umbral + "33"}`,
                   boxShadow: focused ? `0 0 10px ${C.gold}55` : "none",
                   animation: isSurger && surging ? "shake .4s infinite" : "none",
                 }}>
                 <div style={{ fontSize: 26 }}>{isSurger && surging ? "⚠️" : e.icon}</div>
-                <div style={{ fontSize: 10, color: C.dim, minHeight: 24, display: "flex", flexDirection: "column", justifyContent: "center", lineHeight: 1.15 }}>
-                  <div>{e.name}</div>
-                  {((slowOn && battle.slowedKey === e.key) || (e.burnStacks || 0) > 0) && (
-                    <div style={{ marginTop: 2 }}>
-                      {slowOn && battle.slowedKey === e.key ? "🌿" : ""}{(e.burnStacks || 0) > 0 ? `🔥×${e.burnStacks}` : ""}
-                    </div>
-                  )}
+                <div style={{ fontSize: 10, color: C.dim, height: 30, display: "flex", flexDirection: "column", justifyContent: "flex-start", lineHeight: 1.15, overflow: "hidden" }}>
+                  <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</div>
+                  <div style={{ height: 13 }}>
+                    {slowOn && battle.slowedKey === e.key ? "🌿" : ""}{(e.burnStacks || 0) > 0 ? `🔥×${e.burnStacks}` : ""}
+                  </div>
                 </div>
                 <Bar val={e.hp} max={e.maxHp} color={C.umbral} h={6} />
                 <div style={{ margin: "3px 0" }}><Bar val={e.gauge || 0} max={100} color={C.blue} h={4} /></div>
                 <div style={{ fontSize: 11 }}>{e.hp}</div>
-                {focused && <div style={{ fontSize: 10, color: C.gold, fontWeight: 700 }}>🎯 FOCUS</div>}
+                <div style={{ fontSize: 10, color: C.gold, fontWeight: 700, height: 14 }}>{focused ? "🎯 FOCUS" : ""}</div>
               </StatCard>
             );
           })}
         </div>
 
-        {/* active buffs */}
-        <div style={{ minHeight: 18, textAlign: "center", fontSize: 12, marginBottom: 4 }}>
-          {tauntOn && <span style={{ color: C.blue, marginRight: 10 }}>🛡️ Taunt active</span>}
-          {hasteOn && <span style={{ color: C.blue, marginRight: 10 }}>🏹 Fenwick hasted</span>}
-          {slowOn && <span style={{ color: C.umbral }}>🌿 {battle.enemies.find(e => e.key === battle.slowedKey)?.name || "Enemy"} blooming</span>}
-          {battle.tick < (battle.consecUntil || 0) && <span style={{ color: C.gold, marginLeft: 10 }}>⚜️ Consecrated</span>}
-          {battle.tick < (battle.hotUntil || 0) && battle.hotHeroId && <span style={{ color: C.green, marginLeft: 10 }}>🌿 Regrowth on {run.heroes.find(x => x.id === battle.hotHeroId)?.name}</span>}
+        {/* active buffs — fixed height + single line so multiple simultaneous
+            effects never wrap and shift the hero cards below */}
+        <div style={{ height: 20, textAlign: "center", fontSize: 12, marginBottom: 4, display: "flex", justifyContent: "center", alignItems: "center", gap: 10, whiteSpace: "nowrap", overflow: "hidden" }}>
+          {tauntOn && <span style={{ color: C.blue }}>🛡️ Taunt</span>}
+          {hasteOn && <span style={{ color: C.blue }}>🏹 Hasted</span>}
+          {slowOn && <span style={{ color: C.umbral }}>🌿 {battle.enemies.find(e => e.key === battle.slowedKey)?.name || "Enemy"} slowed</span>}
+          {battle.tick < (battle.consecUntil || 0) && <span style={{ color: C.gold }}>⚜️ Consecrated</span>}
+          {battle.tick < (battle.hotUntil || 0) && battle.hotHeroId && <span style={{ color: C.green }}>🌿 Regrowth: {run.heroes.find(x => x.id === battle.hotHeroId)?.name}</span>}
         </div>
 
         {/* Fight! (inline) */}
@@ -1648,12 +1724,12 @@ export default function Emberhold() {
           ) : null}
         </div>
 
-        <div style={{ minHeight: 48, textAlign: "center", fontSize: 13, color: C.gold, marginBottom: 8 }}>
+        <div style={{ height: 54, textAlign: "center", fontSize: 13, color: C.gold, marginBottom: 8, display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden" }}>
           {battle.log.filter(e => (typeof e === "string" ? true : e.level === "major")).slice(-3).map((l, i) => <div key={i}>{typeof l === "string" ? l : l.text}</div>)}
         </div>
 
         {/* heroes: HP bar, attack gauge bar, ult bar + button */}
-        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "flex-start" }}>
           {run.heroes.map((h, i) => {
             const ready = battle.started && h.alive && h.ult >= 100;
             return (
@@ -1661,19 +1737,21 @@ export default function Emberhold() {
                 style={{
                   background: C.panel, borderRadius: 12, padding: 10, width: 106, textAlign: "center",
                   opacity: h.alive ? 1 : 0.3, border: `1px solid ${h.id === "bran" && tauntOn ? C.blue : C.panel2}`,
+                  boxSizing: "border-box", alignSelf: "flex-start",
                 }}>
-                <div style={{ fontSize: 22 }}>{h.icon}</div>
-                <div style={{ fontSize: 12, fontWeight: 700 }}>{h.name}</div>
+                <div style={{ fontSize: 22, height: 28, lineHeight: "28px" }}>{h.icon}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, height: 18, lineHeight: "18px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{h.name}</div>
                 <Bar val={h.hp} max={h.maxHp} color={C.green} h={6} />
                 <div style={{ margin: "3px 0" }}><Bar val={h.gauge || 0} max={100} color={C.blue} h={4} /></div>
                 <div style={{ margin: "3px 0" }}><Bar val={h.ult} max={100} color={C.ember} h={5} /></div>
                 <button onClick={e => { e.stopPropagation(); fireUlt(i); }} disabled={!ready} style={{
-                  width: "100%", border: "none", borderRadius: 8, padding: "7px 4px",
+                  width: "100%", border: "none", borderRadius: 8, padding: "0 4px", height: 34,
                   fontFamily: "'Alegreya Sans',sans-serif", fontWeight: 700, fontSize: 11,
                   background: ready ? C.ember : "#352c44", color: ready ? "#1a1020" : C.dim,
                   cursor: ready ? "pointer" : "default",
                   animation: ready ? "pulse .7s infinite" : "none",
                   boxShadow: ready ? `0 0 12px ${C.ember}88` : "none",
+                  lineHeight: 1.1, overflow: "hidden",
                 }}>{ready ? `⚡ ${h.ultName}` : battle.started ? `${Math.round(h.ult)}%` : h.ultName}</button>
               </StatCard>
             );
