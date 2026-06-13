@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Alegreya+Sans:wght@400;500;700&display=swap');`;
 
-const VERSION = "0.101";
+const VERSION = "0.102";
 
 /* persistent save (localStorage) — survives the run/battle state isn't saved,
    only your Hold progression: resources, building levels, runs done, the
@@ -165,8 +165,8 @@ const REGIONS = {
       { id: "phoenix", name: "Phoenix Feather", icon: "🪶", desc: "Auto-revive a fallen hero at 30% HP (stacks ×3)", mod: { phoenix: 1 } },
     ],
     events: [
-      { text: "A wounded pilgrim begs for coin. Her eyes glint strangely in the gloom.", a: { label: "Give 20 gold", needGold: 20, fn: s => ({ ...s, gold: s.gold - 20, atkMod: s.atkMod + 0.06, blessing: "She whispers a war-blessing: +6% attack this run." }) }, b: { label: "Walk past", fn: s => ({ ...s, blessing: "You walk past. Her eyes follow you into the dark. Nothing happens." }) } },
-      { text: "A shrine of the old Worldflame flickers above the black water.", a: { label: "Touch the flame", fn: s => Math.random() > 0.4 ? { ...s, atkMod: s.atkMod + 0.1, blessing: "The flame accepts you! +10% attack this run." } : { ...s, teamDmg: 20, blessing: "The flame rejects you. Burned: the party loses 20 HP." } }, b: { label: "Bow and leave", fn: s => ({ ...s, gold: s.gold + 15, blessing: "You bow and find a 15 gold offering at the shrine's base." }) } },
+      { text: "A wounded pilgrim begs for coin. Her eyes glint strangely in the gloom.", a: { label: "Give 20 gold", needGold: 20, fn: s => Math.random() < 0.6 ? { ...s, gold: s.gold - 20, atkMod: s.atkMod + 0.06, blessing: "She whispers a war-blessing: +6% attack this run." } : { ...s, gold: s.gold - 20, blessing: "She takes the coin, mutters, and shuffles off. No blessing comes." } }, b: { label: "Walk past", fn: s => ({ ...s, blessing: "You walk past. Her eyes follow you into the dark. Nothing happens." }) } },
+      { text: "A shrine of the old Worldflame flickers above the black water.", a: { label: "Touch the flame", fn: s => Math.random() > 0.8 ? { ...s, atkMod: s.atkMod + 0.1, blessing: "The flame accepts you! +10% attack this run." } : { ...s, teamDmg: 20, blessing: "The flame rejects you. Burned: the party loses 20 HP." } }, b: { label: "Bow and leave", fn: s => ({ ...s, gold: s.gold + 15, blessing: "You bow and find a 15 gold offering at the shrine's base." }) } },
       { text: "An abandoned supply cart sits half-swallowed by marsh roots.", a: { label: "Loot it quickly", fn: s => ({ ...s, wood: s.wood + 30, blessing: "You grab what you can: +30 wood salvaged." }) }, b: { label: "Search thoroughly (risky)", fn: s => Math.random() > 0.5 ? { ...s, wood: s.wood + 30, embers: s.embers + 3, blessing: "Hidden compartment! +30 wood and +3 embers!" } : { ...s, teamDmg: 25, blessing: "Bog hounds were waiting. Ambushed: -25 HP to the party." } } },
       { text: "A drowned chest glimmers beneath the black water.", a: { label: "Dive for it", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 60, blessing: "You wrench it free: +60 gold!" } : { ...s, teamDmg: 20, blessing: "Something pulls back. You escape, but the party loses 20 HP." } }, b: { label: "Leave it", fn: s => ({ ...s, blessing: "Some treasures are bait. You move on, unharmed." }) } },
       { text: "A fen witch offers a bubbling draught from her hut on stilts.", a: { label: "Drink it", fn: s => Math.random() > 0.5 ? { ...s, teamHeal: 40, blessing: "Warmth floods your veins: the party heals 40 HP." } : { ...s, teamDmg: 15, blessing: "It was swamp bile. The party loses 15 HP." } }, b: { label: "Refuse politely", fn: s => ({ ...s, blessing: "She cackles and waves you off. Nothing happens." }) } },
@@ -203,7 +203,7 @@ const REGIONS = {
       { id: "phoenix", name: "Phoenix Feather", icon: "🪶", desc: "Auto-revive a fallen hero at 30% HP (stacks ×3)", mod: { phoenix: 1 } },
     ],
     events: [
-      { text: "A vast cavern swallows your torchlight. Something distant echoes back.", a: { label: "Call out", fn: s => Math.random() > 0.5 ? { ...s, atkMod: s.atkMod + 0.08, blessing: "The echo returns as a battle-hymn. +8% attack this run." } : { ...s, teamDmg: 20, blessing: "Something heard you. Sharp claws rake the party from the dark: -20 HP." } }, b: { label: "Pass in silence", fn: s => ({ ...s, blessing: "You creep past. The cavern keeps its secrets." }) } },
+      { text: "A vast cavern swallows your torchlight. Something distant echoes back.", a: { label: "Call out", fn: s => Math.random() > 0.6 ? { ...s, atkMod: s.atkMod + 0.08, blessing: "The echo returns as a battle-hymn. +8% attack this run." } : { ...s, teamDmg: 20, blessing: "Something heard you. Sharp claws rake the party from the dark: -20 HP." } }, b: { label: "Pass in silence", fn: s => ({ ...s, blessing: "You creep past. The cavern keeps its secrets." }) } },
       { text: "A cluster of corrupted crystals pulses with cold light.", a: { label: "Touch the crystal", fn: s => Math.random() > 0.4 ? { ...s, embers: s.embers + 4, blessing: "Power flows in: +4 embers." } : { ...s, teamDmg: 15, blessing: "Frostburn lances through the party: -15 HP." } }, b: { label: "Carefully harvest a shard (10 wood)", needWood: 10, fn: s => s.wood >= 10 ? { ...s, wood: s.wood - 10, embers: s.embers + 2, blessing: "You pry one loose with a wedge: +2 embers (-10 wood)." } : { ...s, blessing: "Not enough wood for a wedge. You leave them be." } } },
       { text: "A pile of cracked bones surrounds a glinting weapon-hilt.", a: { label: "Take the weapon", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 30, blessing: "Beneath the bones, a fat coinpurse: +30 gold." } : { ...s, teamDmg: 18, blessing: "The bones rise! You drive them back, but the party loses 18 HP." } }, b: { label: "Burn the pile", fn: s => ({ ...s, wood: Math.max(0, s.wood - 5), blessing: "You salt and burn it. -5 wood spent on cleansing rites." }) } },
       { text: "A cave-in blocks the way forward.", a: { label: "Dig through (risk injury)", fn: s => ({ ...s, teamDmg: 12, blessing: "Stone cuts and bruises, but you break through: -12 HP." }) }, b: { label: "Detour (costs 15 wood for braces)", needWood: 15, fn: s => s.wood >= 15 ? { ...s, wood: s.wood - 15, blessing: "Solid bracing. The detour is safe (-15 wood)." } : { ...s, teamDmg: 20, blessing: "Not enough wood. The detour collapses: -20 HP." } } },
@@ -243,7 +243,7 @@ const REGIONS = {
     ],
     events: [
       { text: "An ogre cookpot bubbles unattended over a great fire.", a: { label: "Steal the stew", fn: s => Math.random() > 0.4 ? { ...s, teamHeal: 30, blessing: "Hearty and hot! The party heals 30 HP." } : { ...s, teamDmg: 20, blessing: "The cook returns mid-bite. You flee with bruises: -20 HP." } }, b: { label: "Tip it over and run", fn: s => ({ ...s, blessing: "Distant roars of ogre fury echo behind you. Worth it." }) } },
-      { text: "A wounded wolf pup whimpers in a snare.", a: { label: "Free and tend it (10 gold)", needGold: 10, fn: s => ({ ...s, gold: s.gold - 10, atkMod: s.atkMod + 0.06, blessing: "The pack watches from the shadows, then howls. Pack-blessed: +6% attack." }) }, b: { label: "Leave it", fn: s => ({ ...s, blessing: "Its cries fade behind you. The forest remembers." }) } },
+      { text: "A wounded wolf pup whimpers in a snare.", a: { label: "Free and tend it (10 gold)", needGold: 10, fn: s => Math.random() < 0.6 ? { ...s, gold: s.gold - 10, atkMod: s.atkMod + 0.06, blessing: "The pack watches from the shadows, then howls. Pack-blessed: +6% attack." } : { ...s, gold: s.gold - 10, blessing: "The pup bolts the moment it is free. The pack stays silent." } }, b: { label: "Leave it", fn: s => ({ ...s, blessing: "Its cries fade behind you. The forest remembers." }) } },
       { text: "An elder treant blocks the path with a riddle.", a: { label: "Answer the riddle", fn: s => Math.random() > 0.4 ? { ...s, embers: s.embers + 4, blessing: "Correct! Its bark splits to reveal +4 embers." } : { ...s, teamDmg: 10, blessing: "Wrong. A branch swats the party: -10 HP." } }, b: { label: "Go around (slow)", fn: s => ({ ...s, wood: s.wood + 10, blessing: "You gather fallen branches on the detour: +10 wood." }) } },
       { text: "Ogres have built a toll bridge over a ravine.", a: { label: "Pay the toll (30 gold)", needGold: 30, fn: s => ({ ...s, gold: s.gold - 30, blessing: "The ogres grunt and let you pass unharmed." }) }, b: { label: "Fight through", fn: s => ({ ...s, teamDmg: 20, gold: s.gold + 20, blessing: "You batter through and loot their toll box: -20 HP, +20 gold." }) } },
       { text: "Golden acorns gleam on a high branch.", a: { label: "Climb for them", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 50, blessing: "A pouch's worth! +50 gold." } : { ...s, teamDmg: 15, blessing: "The branch snaps. -15 HP and wounded pride." } }, b: { label: "Shake the trunk", fn: s => ({ ...s, gold: s.gold + 10, blessing: "A few drop loose: +10 gold." }) } },
@@ -304,73 +304,76 @@ const shuffle = a => [...a].sort(() => Math.random() - 0.5);
 const aggRelics = relics => relics.reduce((a, r) => { for (const k in r.mod) a[k] = (a[k] || 0) + r.mod[k]; return a; }, {});
 
 function makeRunGrid() {
-  /* Grid is 3 rows x (COLS+1) cols. The last col (index COLS) is the "final
-     waygate column": middle row is ALWAYS a waygate; rows 0/2 are combat.
-
-     SPECIAL-NODE SPACING (v0.102): waygates, shrines, and events are kept
-     out of adjacent columns, so back-to-back non-combat encounters are
-     impossible for the same type and rare (~15%) across types. Two specials
-     of DIFFERENT types may share one column (the player picks one). Special
-     counts are reduced (2 waygates + 2 shrines + 2 events) — paths hold
-     notably more enemy encounters. */
+  /* Grid is now 3 rows x (COLS+1) cols. The last col (index COLS) is the
+     "final waygate column": row 1 (middle) is ALWAYS a waygate; rows 0 and 2
+     are random non-waygate encounters. Every path can choose between healing
+     at the waygate or taking the alternate encounter for resources. */
   const grid = Array.from({ length: 3 }, () => Array(COLS + 1).fill("fight"));
 
-  // gaps in cols 1 to COLS-1 only
+  // gaps in cols 1 to COLS-1 only (col 0 and col COLS stay fully populated)
   const gapCols = shuffle(Array.from({ length: COLS - 1 }, (_, i) => i + 1)).slice(0, 3);
   shuffle([0, 1, 2]).forEach((row, i) => { if (Math.random() < 0.75) grid[row][gapCols[i]] = null; });
 
-  const fightCells = (lo = 1, hi = COLS - 1) => {
+  const fightCells = () => {
     const out = [];
-    for (let r = 0; r < 3; r++) for (let c = lo; c <= hi; c++) if (grid[r][c] === "fight") out.push({ r, c });
+    for (let r = 0; r < 3; r++) for (let c = 1; c < COLS; c++) if (grid[r][c] === "fight") out.push({ r, c });
     return out;
   };
 
-  /* adjacency bookkeeping — the final column is pre-seeded as a waygate */
-  const specialCols = new Map([[COLS, new Set(["waygate"])]]);
-  const note = (c, type) => { if (!specialCols.has(c)) specialCols.set(c, new Set()); specialCols.get(c).add(type); };
-  const hasType = (c, type) => specialCols.has(c) && specialCols.get(c).has(type);
-  const hasAny = c => specialCols.has(c);
+  /* waygates: MAX 3 per map total. The final column (COLS) always holds one
+     waygate (its middle row), so we place at most 2 scattered waygates here.
+     AT LEAST ONE scattered waygate must be in cols 4-7 (depths 5-8). */
+  const MAX_WAYGATES = 3;
+  const waygateCols = new Set();
+  let forcedOne = false;
+  for (const { r, c } of shuffle(fightCells())) {
+    if (forcedOne) break;
+    if (c >= 4 && c <= 7) { grid[r][c] = "waygate"; waygateCols.add(c); forcedOne = true; }
+  }
+  for (const { r, c } of shuffle(fightCells())) {
+    if (waygateCols.size >= MAX_WAYGATES - 1) break; // -1 reserves the final-column waygate
+    if (waygateCols.has(c)) continue;
+    grid[r][c] = "waygate"; waygateCols.add(c);
+  }
 
-  /* place one special of `type`:
-     pass 1 — strict: no same type within 1 col, no other special in adjacent
-              cols (sharing the SAME column with a different type is fine)
-     pass 2 — only if a single 15% roll passes: relax the cross-type
-              adjacency rule (same-type spacing stays absolute) */
-  const placeSpecial = (type, lo = 1, hi = COLS - 1) => {
-    const strict = ({ c }) =>
-      !hasType(c - 1, type) && !hasType(c, type) && !hasType(c + 1, type) &&
-      !hasAny(c - 1) && !hasAny(c + 1);
-    const relaxed = ({ c }) =>
-      !hasType(c - 1, type) && !hasType(c, type) && !hasType(c + 1, type);
-    let cells = shuffle(fightCells(lo, hi)).filter(strict);
-    if (!cells.length && Math.random() < 0.15) cells = shuffle(fightCells(lo, hi)).filter(relaxed);
-    if (!cells.length) return false;
-    const { r, c } = cells[0];
-    grid[r][c] = type; note(c, type);
-    return true;
-  };
+  /* shrines: target distribution 68% one, 32% two. Distinct, non-adjacent
+     columns. Count is decided up front and exempted from the combat-floor
+     conversion below so the distribution is exact. */
+  const shrineTarget = Math.random() < 0.90 ? 1 : 2;
+  const shrineCols = new Set();
+  for (const { r, c } of shuffle(fightCells())) {
+    if (shrineCols.size >= shrineTarget) break;
+    if (shrineCols.has(c) || shrineCols.has(c - 1) || shrineCols.has(c + 1)) continue;
+    grid[r][c] = "shrine"; shrineCols.add(c);
+  }
 
-  /* waygates: one guaranteed in cols 4-7, one more anywhere */
-  placeSpecial("waygate", 4, 7);
-  placeSpecial("waygate");
-  /* shrines & events: 2 each */
-  placeSpecial("shrine"); placeSpecial("shrine");
-  placeSpecial("event"); placeSpecial("event");
+  /* events: target distribution 60% one, 40% two (never three). Count
+     decided up front and exempted from the combat-floor conversion. */
+  const eventTarget = Math.random() < 0.60 ? 1 : 2;
+  const eventCols = new Set();
+  for (const { r, c } of shuffle(fightCells())) {
+    if (eventCols.size >= eventTarget) break;
+    if (eventCols.has(c)) continue;
+    grid[r][c] = "event"; eventCols.add(c);
+  }
 
   /* elites in mid-to-late cols */
   for (let r = 0; r < 3; r++) for (let c = 4; c < COLS; c++) {
     if (grid[r][c] === "fight" && Math.random() < 0.22) grid[r][c] = "elite";
   }
 
-  /* FINAL WAYGATE COLUMN: middle row waygate, rows 0/2 are combat */
+  /* FINAL WAYGATE COLUMN (col COLS): middle row is always a waygate. Rows 0
+     and 2 are combat only — shrine and event counts are fixed up front, so the
+     final column must not add extras. */
   grid[1][COLS] = "waygate";
   grid[0][COLS] = Math.random() < 0.25 ? "elite" : "fight";
   grid[2][COLS] = Math.random() < 0.25 ? "elite" : "fight";
 
-  /* >=60% combat enforcement (with sparser specials this rarely fires) */
+  /* ≥75% combat enforcement. Preserve the middle-row col-COLS waygate AND
+     keep ≥1 waygate in cols 4-7 from being converted back to fights. */
   const isCombat = t => t === "fight" || t === "elite";
   const count = () => {
-    let combat = 1, total = 1;
+    let combat = 1, total = 1; // boss counts
     for (let r = 0; r < 3; r++) for (let c = 0; c <= COLS; c++) {
       if (!grid[r][c]) continue;
       total++; if (isCombat(grid[r][c])) combat++;
@@ -382,35 +385,87 @@ function makeRunGrid() {
     for (let r = 0; r < 3; r++) for (let c = 0; c <= COLS; c++) if (grid[r][c] === type) out.push({ r, c });
     return out;
   };
-  const ss = collectByType("shrine"), es = collectByType("event");
-  const wg = collectByType("waygate").filter(({ r, c }) => !(r === 1 && c === COLS));
-  const wg47 = wg.filter(({ c }) => c >= 4 && c <= 7);
-  const wgLow = wg.filter(({ c }) => c < 4 || c > 7);
-  const pool = [
-    ...shuffle(ss).slice(0, Math.max(0, ss.length - 1)),
-    ...shuffle(es).slice(0, Math.max(0, es.length - 1)),
-    ...shuffle(wgLow),
-    ...shuffle(wg47).slice(0, Math.max(0, wg47.length - 1)),
-  ];
+  const allWg = collectByType("waygate");
+  const wgFinal = ({ r, c }) => r === 1 && c === COLS;
+  const wg47 = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= 4 && c <= 7);
+  const wgLow = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= 0 && c <= 3);
+  /* conversion pool: surplus nodes become fights to reach the combat floor.
+     Shrines and events are EXEMPT — their counts were chosen up front (70/30
+     for shrines, 60/40 for events) and must stay exact, so only surplus
+     waygates convert. Protected: 1 waygate in cols 4-7 + the final-column
+     waygate. */
+  const wgExcess = [...shuffle(wgLow), ...shuffle(wg47).slice(0, Math.max(0, wg47.length - 1))];
+  const pool = [...wgExcess];
   let { combat, total } = count();
-  while (combat / total < 0.6 && pool.length) {
+  while (combat / total < 0.75 && pool.length) {
     const { r, c } = pool.shift();
     grid[r][c] = "fight";
     combat++;
   }
 
-  /* hard guarantees: >=1 shrine, >=1 event, >=1 waygate in cols 4-7 */
+  /* hard guarantees */
   const has = type => grid.some(row => row.some(t => t === type));
-  if (!has("shrine")) placeSpecial("shrine") || (() => { const c = fightCells(); if (c.length) grid[c[0].r][c[0].c] = "shrine"; })();
-  if (!has("event")) placeSpecial("event") || (() => { const c = fightCells(); if (c.length) grid[c[0].r][c[0].c] = "event"; })();
+  const placeOne = type => {
+    const cells = fightCells();
+    if (!cells.length) return;
+    if (type === "shrine") {
+      const usedCols = new Set();
+      grid.forEach(row => row.forEach((t, c) => { if (t === "shrine") usedCols.add(c); }));
+      for (const { r, c } of shuffle(cells)) {
+        if (usedCols.has(c - 1) || usedCols.has(c + 1)) continue;
+        grid[r][c] = "shrine"; return;
+      }
+    }
+    const { r, c } = cells[0];
+    grid[r][c] = type;
+  };
+  if (!has("shrine")) placeOne("shrine");
+  if (!has("event")) placeOne("event");
+
+  /* defensive — make absolutely sure we have ≥1 waygate in cols 4-7 */
   let hasWg47 = false;
   for (let r = 0; r < 3; r++) for (let c = 4; c <= 7; c++) if (grid[r][c] === "waygate") hasWg47 = true;
   if (!hasWg47) {
-    outer: for (const c of shuffle([4, 5, 6])) { /* col 7 borders the final waygate */
+    outer: for (const c of shuffle([4, 5, 6, 7])) {
       for (const r of shuffle([0, 1, 2])) {
         if (grid[r][c] === "fight") { grid[r][c] = "waygate"; break outer; }
       }
     }
+  }
+
+  /* never allow a player to pick waygates three columns in a row. The final
+     column (COLS) always holds a waygate, so scan for any 3 consecutive
+     columns that each contain a waygate and demote the middle column's
+     waygate(s) to fights. */
+  const colHasWaygate = c => grid.some(row => row[c] === "waygate");
+  for (let c = 0; c + 2 <= COLS; c++) {
+    if (colHasWaygate(c) && colHasWaygate(c + 1) && colHasWaygate(c + 2)) {
+      for (let r = 0; r < 3; r++) if (grid[r][c + 1] === "waygate") grid[r][c + 1] = "fight";
+    }
+  }
+
+  /* HARD CAP: at most 3 waygates per map. The final-column waygate is always
+     kept; demote any extras (lowest columns first) to fights. */
+  const allWaygates = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c <= COLS; c++) if (grid[r][c] === "waygate") allWaygates.push({ r, c });
+  if (allWaygates.length > 3) {
+    const removable = allWaygates
+      .filter(({ r, c }) => !(r === 1 && c === COLS)) // protect the final waygate
+      .sort((a, b) => a.c - b.c); // demote earliest columns first
+    let excess = allWaygates.length - 3;
+    for (const { r, c } of removable) {
+      if (excess <= 0) break;
+      grid[r][c] = "fight"; excess--;
+    }
+  }
+
+  /* HARD CAP: at most 2 shrines per map. Demote extras (latest columns
+     first) to fights. */
+  const allShrines = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c <= COLS; c++) if (grid[r][c] === "shrine") allShrines.push({ r, c });
+  if (allShrines.length > 2) {
+    const extra = allShrines.sort((a, b) => b.c - a.c).slice(0, allShrines.length - 2);
+    for (const { r, c } of extra) grid[r][c] = "fight";
   }
 
   return grid;
@@ -710,8 +765,10 @@ export default function Emberhold() {
     const depth = cand.boss ? COLS + 1 : cand.col;
 
     if (type === "fight" || type === "elite" || type === "boss") {
+      /* attack charge starts fresh each fight */
+      setRun({ ...r2, heroes: r2.heroes.map(h => ({ ...h, gauge: 0 })) });
       const enemies = makeEnemies(r2.regionId, type, depth, modsOf(r2));
-      setBattle({ enemies, type, log: [{ text: "The enemy blocks your path. Steel yourselves...", level: "major" }], focus: enemies[0].key, surge: null, tick: 0, started: false, tauntUntil: 0, hasteUntil: 0, slowUntil: 0, slowedKey: null, consecUntil: 0, hotHeroId: null, hotUntil: 0, hotPerSec: 0 });
+      setBattle({ enemies, type, log: [{ text: "The enemy blocks your path. Steel yourselves...", level: "major" }], focus: enemies[0].key, surge: null, tick: 0, started: false, enraged: false, tauntUntil: 0, hasteUntil: 0, slowUntil: 0, slowedKey: null, consecUntil: 0, hotHeroId: null, hotUntil: 0, hotPerSec: 0 });
       setScreen("battle");
     } else if (type === "shrine") {
       const pool = REGIONS[r2.regionId].relics.filter(x =>
@@ -764,6 +821,26 @@ export default function Emberhold() {
       const tick = b.tick + 1;
       let phoenixSpent = r.phoenixSpent || (r.phoenixUsed ? 1 : 0);
 
+      /* ENRAGE (boss fights): every boss enrages if the fight drags past
+         ENRAGE_SECS (anti-stall). The Ogre King ALSO enrages early when it
+         drops below ENRAGE_HP_PCT — a signature desperate phase for the
+         realm's final boss. While enraged, all enemies in the fight gain
+         +50% attack and +30% attack speed, and Umbral Surges wind up faster. */
+      const ENRAGE_SECS = 45, ENRAGE_HP_PCT = 0.30;
+      let enraged = b.enraged || false;
+      if (b.type === "boss" && !enraged) {
+        const boss = enemies[0];
+        const byTime = tick >= ENRAGE_SECS * 4;
+        const byHp = r.regionId === "forest" && boss && boss.maxHp > 0 && boss.hp > 0 && boss.hp / boss.maxHp <= ENRAGE_HP_PCT;
+        if (byTime || byHp) {
+          enraged = true;
+          log.push({ text: `😡 ${enemies[0]?.name || "The boss"} ENRAGES — ${byHp ? "wounded and furious" : "tired of your defiance"}!`, level: "major" });
+          addFloat("😡 ENRAGED", C.red);
+        }
+      }
+      const enrageAtk = enraged ? 1.5 : 1;
+      const enrageSpd = enraged ? 1.3 : 1;
+
       const atkMul = (1 + r.atkMod) * (1 + (ag.atkPct || 0) / 100);
       const eAtkMul = 1 + (ag.enemyAtkPct || 0) / 100; /* descent atk modifier is baked into enemy stats multiplicatively */
       const ultGain = ULT_PER_ATTACK * (1 + 0.08 * (bld.arcanum - 1)) * (1 + (ag.ultPct || 0) / 100);
@@ -797,7 +874,7 @@ export default function Emberhold() {
       /* enemies: attack gauge; Entangle slows ONLY the marked target; taunt redirects to Branwen */
       enemies.filter(e => e.hp > 0).forEach(e => {
         const slowed = e.key === b.slowedKey && tick < b.slowUntil ? 0.5 : 1;
-        e.gauge = (e.gauge || 0) + e.spd * enemySpdBase * slowed;
+        e.gauge = (e.gauge || 0) + e.spd * enemySpdBase * slowed * enrageSpd;
         if (e.gauge >= 100) {
           e.gauge -= 100;
           const live = heroes.filter(h => h.alive);
@@ -808,7 +885,7 @@ export default function Emberhold() {
           if (t.id === "bran" && tick < b.tauntUntil) { td.def *= 2; td.mdef *= 2; } /* Taunt doubles his defenses */
           if (tick < (b.consecUntil || 0)) { td.def = Math.round(td.def * 1.5); td.mdef = Math.round(td.mdef * 1.5); } /* Consecration */
           if (rollHit(e, td)) {
-            const { dmg, crit } = rollDamage({ ...e, atk: Math.round(e.atk * eAtkMul), matk: Math.round(e.matk * eAtkMul) }, td, 1);
+            const { dmg, crit } = rollDamage({ ...e, atk: Math.round(e.atk * eAtkMul * enrageAtk), matk: Math.round(e.matk * eAtkMul * enrageAtk) }, td, 1);
             t.hp -= dmg;
             if (crit) addFloat(`-${dmg} CRIT!`, C.red);
             log.push({ text: `${e.icon} ${e.name} ${crit ? "CRITS" : "hits"} ${t.name} for ${dmg}`, level: "detail" });
@@ -829,7 +906,7 @@ export default function Emberhold() {
               const td = { ...t, def: t.def + defAdj, mdef: t.mdef + (ag.mdefFlat || 0), eva: t.eva + (ag.evaFlat || 0) };
               if (t.id === "bran" && tick < b.tauntUntil) { td.def *= 2; td.mdef *= 2; } /* Taunt doubles his defenses */
               if (tick < (b.consecUntil || 0)) { td.def = Math.round(td.def * 1.5); td.mdef = Math.round(td.mdef * 1.5); } /* Consecration */
-              const { dmg: raw } = rollDamage({ ...src, atk: Math.round(src.atk * eAtkMul), matk: Math.round(src.matk * eAtkMul), crit: 0 }, td, 3);
+              const { dmg: raw } = rollDamage({ ...src, atk: Math.round(src.atk * eAtkMul * enrageAtk), matk: Math.round(src.matk * eAtkMul * enrageAtk), crit: 0 }, td, 3);
               const dmg = surge.braced ? Math.round(raw * 0.3) : raw;
               t.hp -= dmg;
               log.push({ text: surge.braced ? `🛡️ BRACED! ${t.name} takes only ${dmg}` : `💥 Surge hits ${t.name} for ${dmg}!`, level: "major" });
@@ -838,7 +915,7 @@ export default function Emberhold() {
           }
           surge = null;
         }
-      } else if (tick > 16 && tick % 36 === 0) {
+      } else if (tick > 16 && tick % (enraged ? 24 : 36) === 0) {
         const live = enemies.filter(e => e.hp > 0);
         if (live.length) {
           surge = { enemyKey: rnd(live).key, ticksLeft: 8, braced: false };
@@ -872,7 +949,7 @@ export default function Emberhold() {
       const lost = heroes.every(h => !h.alive);
 
       setRun({ ...r, heroes, phoenixSpent });
-      setBattle({ ...b, enemies, log, surge, tick });
+      setBattle({ ...b, enemies, log, surge, tick, enraged });
 
       if (won) { clearInterval(iv); winFight({ ...r, heroes, phoenixSpent }, heroes, b.type, log); }
       else if (lost) { clearInterval(iv); finishRun({ ...r, heroes }, false); }
@@ -989,6 +1066,8 @@ export default function Emberhold() {
     const goldMul = 1 + (ag.goldPct || 0) / 100;
     const allMul = 1 + (ag.allLootPct || 0) / 100;
     let hs = heroes;
+    /* attack charge does not carry between fights */
+    hs = hs.map(h => ({ ...h, gauge: 0 }));
     if (ag.healAfterFight) hs = hs.map(h => h.alive ? { ...h, hp: Math.min(h.maxHp, h.hp + ag.healAfterFight) } : h);
     const goldGain = Math.round((20 + depth * 8) * mult * goldMul * allMul);
     const woodGain = Math.round((10 + depth * 4) * mult * allMul);
@@ -1509,6 +1588,11 @@ export default function Emberhold() {
     return (
       <Shell title={battle.type === "boss" ? REGIONS[run.regionId].boss.name.toUpperCase() : battle.type === "elite" ? "Elite Encounter" : "Ambush"}
         sub={battle.started ? "Tap an enemy to focus fire · Tap ⓘ for stats · Tap glowing ults to cast" : "Tap ⓘ to inspect your foes, then begin when ready"}>
+        {battle.enraged && (
+          <div style={{ textAlign: "center", marginBottom: 10, padding: "6px 12px", background: "#2a1015", borderRadius: 10, border: `1px solid ${C.red}`, color: C.red, fontWeight: 700, fontSize: 13, animation: "pulse 1s infinite" }}>
+            😡 ENRAGED — the boss strikes harder and faster!
+          </div>
+        )}
         {/* enemies */}
         <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 10, flexWrap: "wrap" }}>
           {battle.enemies.map(e => {
@@ -1525,7 +1609,14 @@ export default function Emberhold() {
                   animation: isSurger && surging ? "shake .4s infinite" : "none",
                 }}>
                 <div style={{ fontSize: 26 }}>{isSurger && surging ? "⚠️" : e.icon}</div>
-                <div style={{ fontSize: 10, color: C.dim, height: 24 }}>{e.name}{slowOn && battle.slowedKey === e.key ? " 🌿" : ""}{(e.burnStacks || 0) > 0 ? ` 🔥×${e.burnStacks}` : ""}</div>
+                <div style={{ fontSize: 10, color: C.dim, minHeight: 24, display: "flex", flexDirection: "column", justifyContent: "center", lineHeight: 1.15 }}>
+                  <div>{e.name}</div>
+                  {((slowOn && battle.slowedKey === e.key) || (e.burnStacks || 0) > 0) && (
+                    <div style={{ marginTop: 2 }}>
+                      {slowOn && battle.slowedKey === e.key ? "🌿" : ""}{(e.burnStacks || 0) > 0 ? `🔥×${e.burnStacks}` : ""}
+                    </div>
+                  )}
+                </div>
                 <Bar val={e.hp} max={e.maxHp} color={C.umbral} h={6} />
                 <div style={{ margin: "3px 0" }}><Bar val={e.gauge || 0} max={100} color={C.blue} h={4} /></div>
                 <div style={{ fontSize: 11 }}>{e.hp}</div>

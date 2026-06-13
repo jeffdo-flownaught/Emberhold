@@ -5,6 +5,42 @@ Versioning: numbered releases (0.100, 0.101, ...) mark playtest milestones.
 Interim fixes append letters (0.101a, 0.101b, ...) until the next number.
 
 ----------------------------------------------------------------------
+v0.102 — playtest patch 2
+----------------------------------------------------------------------
+Consolidates the 0.101a-0.101l interim patches into a milestone.
+
+COMBAT & BOSSES
+- ENRAGE: all bosses enrage if a fight runs past 45 seconds
+  (anti-stall). The Ogre King ALSO enrages early when it drops
+  below 30% HP. While enraged, all enemies in the fight deal +50%
+  attack, attack +30% faster, and Umbral Surges wind up more
+  often, with a pulsing banner.
+- Attack charge now resets to zero at the start of every fight
+  (ultimate charge still carries within a run).
+
+EVENTS
+- Combat-buff events use a risk/reward ladder (bigger buff = worse
+  odds), none are 50/50: Worldflame +10% atk at 20%, cavern echo
+  +8% at 40%, wounded pilgrim +6% at 60%, wolf pup +6% at 60%.
+  (Pilgrim and wolf pup spend their gold whether or not the buff
+  lands.)
+- Events never repeat back-to-back within a region.
+
+MAP GENERATION
+- Enemy-encounter requirement set to 75% of map nodes.
+- Hard maximum of 3 waygates per map (the final-column waygate
+  counts as one); no three waygate columns in a row.
+- Shrine count: ~90% one shrine, ~10% two, never three.
+- Event count: ~60% one event, ~40% two, never three.
+- Shrine and event counts are fixed up front and exempt from the
+  combat-floor conversion, so their distributions stay exact;
+  only surplus waygates convert to fights.
+
+UI
+- Enemy debuff badges (burn/slow) sit on their own line below the
+  name, no longer overlapping the name or HP bar.
+
+----------------------------------------------------------------------
 v0.101 — playtest patch 1
 ----------------------------------------------------------------------
 HEROES
@@ -40,11 +76,7 @@ EQUIPMENT
 - Waygate text clarified: "Only bosses can drop equipment."
 
 MAP & ENCOUNTERS
-- Waygates, shrines, and events are spaced out: the same type never
-  appears in back-to-back columns, different types back-to-back are
-  rare (~15%). Special counts reduced to 2 waygates + 2 shrines +
-  2 events (plus the final waygate). Paths hold notably more enemy
-  encounters (combat density ~73%, was ~63%).
+- (superseded by v0.101a) Special-node spacing experiment.
 - Events never repeat back-to-back within a region.
 - Event combat buffs reduced (values roughly halved); two buff
   events now give gold/healing instead.
