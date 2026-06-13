@@ -90,7 +90,7 @@ async function lbFetchTop(limit = 25) {
   } catch { return []; }
 }
 
-const VERSION = "0.104a";
+const VERSION = "0.104c";
 
 /* persistent save (localStorage) — survives the run/battle state isn't saved,
    only your Hold progression: resources, building levels, runs done, the
@@ -842,6 +842,7 @@ export default function Emberhold() {
     setRes({ gold: 100, wood: 60, embers: 4 });
     setBld({ forge: 1, barracks: 1, arcanum: 1, shard: 1 });
     setRunsDone(0);
+    setBestProgress({ progress: 0, label: "", expeditions: 0, details: "" });
     setForestUnlocked(false);
     setCaveUnlocked(false);
     setItems([]);
@@ -891,7 +892,7 @@ export default function Emberhold() {
       parts.push("Relics: " + Object.entries(counts).map(([n, c]) => c > 1 ? `${n} ×${c}` : n).join(", "));
     }
     if (r.atkMod > 0) parts.push(`Event buffs: +${Math.round(r.atkMod * 100)}% attack`);
-    return parts.join(" | ");
+    return parts.length ? parts.join(" | ") : "No modifiers, relics, or event buffs";
   };
   const recordProgress = (regionId, depth, bossKilled, expeditions, runForDetails) => {
     const progress = computeProgress(regionId, depth, bossKilled);

@@ -5,6 +5,25 @@ Versioning: numbered releases (0.100, 0.101, ...) mark playtest milestones.
 Interim fixes append letters (0.101a, 0.101b, ...) until the next number.
 
 ----------------------------------------------------------------------
+v0.104c
+----------------------------------------------------------------------
+- Reset Hold now also clears your local best run (progress,
+  expeditions, details) directly, so it resets reliably in every
+  environment — previously it only cleared via the save wipe,
+  which doesn't take effect where page reloads are blocked.
+  (Note: this clears the LOCAL best only. Your entry on the online
+  leaderboard is a permanent record and is not removed by a reset.)
+
+----------------------------------------------------------------------
+v0.104b
+----------------------------------------------------------------------
+- Leaderboard detail logging: a best-setting run with no
+  modifiers, relics, or event buffs now records "No modifiers,
+  relics, or event buffs" instead of an empty field, so the
+  Details view always shows something. (Details are only written
+  when a run sets a new personal best, by design.)
+
+----------------------------------------------------------------------
 v0.104a
 ----------------------------------------------------------------------
 - Cinder Nova burn now caps at 5 stacks per enemy. Further novas
