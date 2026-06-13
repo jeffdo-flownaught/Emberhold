@@ -37,7 +37,7 @@ const LB_ENABLED = () => FIREBASE_PROJECT_ID.length > 0;
 const LB_BASE = () => `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
 /* submit a player's best progress. Fire-and-forget; never throws. */
-async function lbSubmit({ username, progress, label, expeditions }) {
+async function lbSubmit({ username, progress, label, expeditions, details }) {
   if (!LB_ENABLED() || !username) return false;
   try {
     const body = {
@@ -46,6 +46,7 @@ async function lbSubmit({ username, progress, label, expeditions }) {
         progress: { integerValue: String(Math.round(progress)) },
         label: { stringValue: String(label).slice(0, 48) },
         expeditions: { integerValue: String(Math.max(0, Math.round(expeditions || 0))) },
+        details: { stringValue: String(details || "").slice(0, 400) },
         version: { stringValue: VERSION },
         ts: { integerValue: String(Date.now()) },
       },
@@ -81,14 +82,15 @@ async function lbFetchTop(limit = 25) {
       const progress = parseInt(d.progress?.integerValue || "0", 10);
       const label = d.label?.stringValue || "";
       const expeditions = parseInt(d.expeditions?.integerValue || "0", 10);
+      const details = d.details?.stringValue || "";
       const prev = best.get(username);
-      if (!prev || progress > prev.progress) best.set(username, { username, progress, label, expeditions });
+      if (!prev || progress > prev.progress) best.set(username, { username, progress, label, expeditions, details });
     }
     return [...best.values()].sort((a, b) => b.progress - a.progress).slice(0, limit);
   } catch { return []; }
 }
 
-const VERSION = "0.104";
+const VERSION = "0.104a";
 
 /* persistent save (localStorage) — survives the run/battle state isn't saved,
    only your Hold progression: resources, building levels, runs done, the
@@ -200,12 +202,13 @@ const TICK_MS = 250;            // engine tick
 const ENEMY_HP_MUL = 3;
 const ULT_PER_ATTACK = 20;      // ult charge gained per attack swing
 const COLS = 8;                 // encounter columns; +converge waygate +boss = 10 depths
+const BURN_MAX_STACKS = 5;      // Cinder Nova burn caps at 5 stacks per enemy
 
 /* ---------- heroes (6) ---------- */
 const HERO_DEFS = [
   { id: "bran", name: "Branwen", cls: "Vanguard", icon: "🛡️", baseHp: 130, atk: 10, def: 12, matk: 4, mdef: 10, crit: 5, eva: 5, acc: 90, spd: 10, ultName: "Taunt", ultDesc: "Enemies attack Branwen for 2s; his defenses are doubled" },
   { id: "kael", name: "Kaelis", cls: "Blade", icon: "⚔️", baseHp: 85, atk: 15, def: 6, matk: 4, mdef: 5, crit: 5, eva: 12, acc: 95, spd: 14, ultName: "Sever", ultDesc: "Strike focused enemy 3× damage" },
-  { id: "syra", name: "Syrene", cls: "Pyromancer", icon: "🔥", baseHp: 70, atk: 6, def: 4, matk: 16, mdef: 12, crit: 12, eva: 8, acc: 92, spd: 12, ultName: "Cinder Nova", ultDesc: "Magic damage to ALL enemies + Burn (0.1×matk dmg/sec, stacks)" },
+  { id: "syra", name: "Syrene", cls: "Pyromancer", icon: "🔥", baseHp: 70, atk: 6, def: 4, matk: 13, mdef: 12, crit: 12, eva: 8, acc: 92, spd: 12, ultName: "Cinder Nova", ultDesc: "Magic damage to ALL enemies + Burn (0.1×matk dmg/sec, stacks)" },
   { id: "prie", name: "Liora", cls: "Priestess", icon: "🙏", baseHp: 75, atk: 5, def: 5, matk: 12, mdef: 14, crit: 5, eva: 8, acc: 92, spd: 11, ultName: "Sanctuary", ultDesc: "Heal the party for magic attack" },
   { id: "rang", name: "Fenwick", cls: "Ranger", icon: "🏹", baseHp: 80, atk: 14, def: 5, matk: 3, mdef: 6, crit: 15, eva: 14, acc: 97, spd: 18, ultName: "Quickdraw", ultDesc: "Fenwick gains +50% attack speed for 3s" },
   { id: "pala", name: "Aldric", cls: "Paladin", icon: "⚜️", baseHp: 110, atk: 11, def: 10, matk: 8, mdef: 10, crit: 8, eva: 7, acc: 92, spd: 12, ultName: "Consecration", ultDesc: "Party +50% defenses 4s · heal lowest-HP ally for magic attack" },
@@ -820,6 +823,7 @@ export default function Emberhold() {
   const [lbRows, setLbRows] = useState(null);     // null = loading, [] = empty, [...] = data, undefined string handled in UI
   const [lbLoading, setLbLoading] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [lbDetails, setLbDetails] = useState(false);
   const [pinned, setPinned] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [showMap, setShowMap] = useState(false);
@@ -875,12 +879,27 @@ export default function Emberhold() {
     return `${name} — depth ${Math.max(1, depth + 1)}`;
   };
   /* record a new run result and push to the board if it's a personal best */
-  const recordProgress = (regionId, depth, bossKilled, expeditions) => {
+  /* compact human-readable summary of the run's modifiers, relics, and event
+     buffs — shown in the leaderboard's "details" view. */
+  const buildRunDetails = (r) => {
+    if (!r) return "";
+    const parts = [];
+    const mods = modsOf(r);
+    if (mods.length) parts.push("Debuffs: " + mods.map(m => m.name).join(", "));
+    if (r.relics && r.relics.length) {
+      const counts = r.relics.reduce((a, x) => { a[x.name] = (a[x.name] || 0) + 1; return a; }, {});
+      parts.push("Relics: " + Object.entries(counts).map(([n, c]) => c > 1 ? `${n} ×${c}` : n).join(", "));
+    }
+    if (r.atkMod > 0) parts.push(`Event buffs: +${Math.round(r.atkMod * 100)}% attack`);
+    return parts.join(" | ");
+  };
+  const recordProgress = (regionId, depth, bossKilled, expeditions, runForDetails) => {
     const progress = computeProgress(regionId, depth, bossKilled);
     const label = progressLabel(regionId, depth, bossKilled);
     if (progress > (bestProgress.progress || 0)) {
-      setBestProgress({ progress, label, expeditions });
-      if (username) lbSubmit({ username, progress, label, expeditions });
+      const details = buildRunDetails(runForDetails);
+      setBestProgress({ progress, label, expeditions, details });
+      if (username) lbSubmit({ username, progress, label, expeditions, details });
     }
   };
   const loadLeaderboard = async () => {
@@ -1225,7 +1244,15 @@ export default function Emberhold() {
       enemies = enemies.map(e => {
         if (e.hp <= 0) return e;
         const { dmg } = rollDamage({ ...h, matk: effMatk }, e, 2 * ultScale);
-        return { ...e, hp: Math.max(0, e.hp - dmg), burnDps: (e.burnDps || 0) + burnPerCast, burnStacks: (e.burnStacks || 0) + 1 };
+        /* Burn caps at BURN_MAX_STACKS stacks. Once capped, further novas deal
+           their direct damage but no longer add burn dps or stacks. */
+        const atCap = (e.burnStacks || 0) >= BURN_MAX_STACKS;
+        return {
+          ...e,
+          hp: Math.max(0, e.hp - dmg),
+          burnDps: atCap ? (e.burnDps || 0) : (e.burnDps || 0) + burnPerCast,
+          burnStacks: atCap ? e.burnStacks : (e.burnStacks || 0) + 1,
+        };
       });
       log.push({ text: `🔥 Cinder Nova engulfs all foes — they BURN (+${burnPerCast}/sec)!`, level: "major" }); addFloat("🔥 NOVA", C.ember);
     }
@@ -1287,7 +1314,7 @@ export default function Emberhold() {
     /* attack charge does not carry between fights */
     hs = hs.map(h => ({ ...h, gauge: 0 }));
     if (ag.healAfterFight) hs = hs.map(h => h.alive ? { ...h, hp: Math.min(h.maxHp, h.hp + ag.healAfterFight) } : h);
-    const goldGain = Math.round((20 + depth * 8) * mult * goldMul * allMul);
+    const goldGain = Math.round((20 + depth * 8) * 0.9 * mult * goldMul * allMul);
     const woodGain = Math.round((10 + depth * 4) * mult * allMul);
     const emberGain = Math.round(((type === "boss" ? 8 : type === "elite" ? 2 : Math.random() > 0.6 ? 1 : 0)) * allMul);
     let r2 = {
@@ -1402,7 +1429,7 @@ export default function Emberhold() {
       return next;
     });
     const fallen = r.heroes.filter(h => !h.alive).map(h => h.id);
-    recordProgress(r.regionId, depthOf(r), bossKill, runsDone + 1);
+    recordProgress(r.regionId, depthOf(r), bossKill, runsDone + 1, r);
     setSummary({ extracted, bossKill, gained, depth: depthOf(r) + 1, drops: r.drops, regionId: r.regionId, ogreKill: bossKill && r.regionId === "forest", fallen });
     setRun(null); setBattle(null);
     setScreen("summary");
@@ -1722,7 +1749,15 @@ export default function Emberhold() {
                 <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 900, color: C.gold, fontSize: 18 }}>🏆 Leaderboard</div>
                 <button onClick={() => setShowLeaderboard(false)} style={{ marginLeft: "auto", background: "transparent", color: C.dim, border: "none", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
               </div>
-              <div style={{ fontSize: 11, color: C.dim, marginBottom: 12 }}>Furthest delve into the Earthen Realm.</div>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 12, gap: 8 }}>
+                <span style={{ fontSize: 11, color: C.dim, flex: 1 }}>Furthest delve into the Earthen Realm.</span>
+                {LB_ENABLED() && (
+                  <div style={{ display: "flex", gap: 0, border: `1px solid ${C.panel2}`, borderRadius: 7, overflow: "hidden" }}>
+                    <button onClick={() => setLbDetails(false)} style={{ background: !lbDetails ? C.ember : "transparent", color: !lbDetails ? "#1a1020" : C.dim, border: "none", padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif" }}>Simple</button>
+                    <button onClick={() => setLbDetails(true)} style={{ background: lbDetails ? C.ember : "transparent", color: lbDetails ? "#1a1020" : C.dim, border: "none", padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif" }}>Details</button>
+                  </div>
+                )}
+              </div>
               <div style={{ overflowY: "auto", flex: 1 }}>
                 {!LB_ENABLED() ? (
                   <div style={{ color: C.dim, fontSize: 13, textAlign: "center", padding: "24px 8px", lineHeight: 1.5 }}>
@@ -1736,13 +1771,20 @@ export default function Emberhold() {
                   lbRows.map((row, i) => {
                     const isMe = row.username === username;
                     return (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, marginBottom: 4, background: isMe ? C.ember + "22" : i % 2 ? "#1a1426" : "transparent", border: isMe ? `1px solid ${C.ember}66` : "1px solid transparent" }}>
-                        <span style={{ width: 28, textAlign: "right", fontWeight: 700, color: i === 0 ? C.gold : i === 1 ? "#c9c9d4" : i === 2 ? "#cd7f32" : C.dim, fontSize: 14 }}>{i + 1}</span>
-                        <span style={{ flex: 1, color: isMe ? C.gold : C.text, fontWeight: isMe ? 700 : 500, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.username}{isMe ? " (you)" : ""}</span>
-                        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.3 }}>
-                          <span style={{ color: C.dim, fontSize: 12 }}>{row.label}</span>
-                          <span style={{ color: C.dim, fontSize: 10, opacity: 0.7 }}>{row.expeditions} expedition{row.expeditions === 1 ? "" : "s"}</span>
-                        </span>
+                      <div key={i} style={{ borderRadius: 8, marginBottom: 4, background: isMe ? C.ember + "22" : i % 2 ? "#1a1426" : "transparent", border: isMe ? `1px solid ${C.ember}66` : "1px solid transparent" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px" }}>
+                          <span style={{ width: 28, textAlign: "right", fontWeight: 700, color: i === 0 ? C.gold : i === 1 ? "#c9c9d4" : i === 2 ? "#cd7f32" : C.dim, fontSize: 14 }}>{i + 1}</span>
+                          <span style={{ flex: 1, color: isMe ? C.gold : C.text, fontWeight: isMe ? 700 : 500, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.username}{isMe ? " (you)" : ""}</span>
+                          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.3 }}>
+                            <span style={{ color: C.dim, fontSize: 12 }}>{row.label}</span>
+                            <span style={{ color: C.dim, fontSize: 10, opacity: 0.7 }}>{row.expeditions} expedition{row.expeditions === 1 ? "" : "s"}</span>
+                          </span>
+                        </div>
+                        {lbDetails && (
+                          <div style={{ padding: "0 10px 8px 48px", fontSize: 11, color: C.dim, lineHeight: 1.4 }}>
+                            {row.details ? row.details : <span style={{ opacity: 0.5 }}>No run details recorded.</span>}
+                          </div>
+                        )}
                       </div>
                     );
                   })
