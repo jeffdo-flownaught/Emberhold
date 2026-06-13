@@ -641,6 +641,29 @@ const Res = ({ res }) => (
   </div>
 );
 
+/* Page shell. Defined at MODULE scope (not inside the main component) so it
+   keeps a stable component identity across renders — otherwise React would
+   remount the whole subtree on every keystroke, dropping input focus. */
+const Shell = ({ children, title, sub, glow, run, floats }) => (
+  <div style={{ minHeight: "100vh", background: `${glow}, ${C.bg}`, color: C.text, fontFamily: "'Alegreya Sans',sans-serif", maxWidth: 480, margin: "0 auto", padding: "20px 16px 32px", position: "relative" }}>
+    <style>{FONT}{`
+      @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.07)} }
+      @keyframes floatUp { 0%{opacity:1; transform:translateY(0)} 100%{opacity:0; transform:translateY(-46px)} }
+      @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+      @keyframes glowPulse { 0%,100%{box-shadow:0 0 5px ${C.gold}44} 50%{box-shadow:0 0 14px ${C.gold}aa} }
+    `}</style>
+    <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 900, fontSize: 13, letterSpacing: 4, color: run ? C.umbral : C.ember, textAlign: "center" }}>EMBERHOLD <span style={{ color: C.dim, fontWeight: 400, letterSpacing: 1, fontSize: 10 }}>v{VERSION}</span></div>
+    {title && <h1 style={{ fontFamily: "'Cinzel',serif", fontSize: 24, fontWeight: 700, textAlign: "center", margin: "10px 0 2px" }}>{title}</h1>}
+    {sub && <div style={{ textAlign: "center", color: C.dim, fontSize: 13, marginBottom: 14 }}>{sub}</div>}
+    {children}
+    <div style={{ position: "absolute", top: "38%", left: 0, right: 0, pointerEvents: "none" }}>
+      {(floats || []).map(f => (
+        <div key={f.id} style={{ position: "absolute", left: `${f.x}%`, fontWeight: 900, fontSize: 18, color: f.color, animation: "floatUp 1.2s ease-out forwards", textShadow: "0 2px 6px #000" }}>{f.text}</div>
+      ))}
+    </div>
+  </div>
+);
+
 /* Build an ultimate description with the caster's CURRENT magic-attack values
    substituted in, instead of the generic "matk" placeholder. `matk` should be
    the hero's effective magic attack at the point of display; an optional
@@ -1546,31 +1569,12 @@ export default function Emberhold() {
     );
   };
 
-  const Shell = ({ children, title, sub }) => (
-    <div style={{ minHeight: "100vh", background: `${glow}, ${C.bg}`, color: C.text, fontFamily: "'Alegreya Sans',sans-serif", maxWidth: 480, margin: "0 auto", padding: "20px 16px 32px", position: "relative" }}>
-      <style>{FONT}{`
-        @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.07)} }
-        @keyframes floatUp { 0%{opacity:1; transform:translateY(0)} 100%{opacity:0; transform:translateY(-46px)} }
-        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
-        @keyframes glowPulse { 0%,100%{box-shadow:0 0 5px ${C.gold}44} 50%{box-shadow:0 0 14px ${C.gold}aa} }
-      `}</style>
-      <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 900, fontSize: 13, letterSpacing: 4, color: run ? C.umbral : C.ember, textAlign: "center" }}>EMBERHOLD <span style={{ color: C.dim, fontWeight: 400, letterSpacing: 1, fontSize: 10 }}>v{VERSION}</span></div>
-      {title && <h1 style={{ fontFamily: "'Cinzel',serif", fontSize: 24, fontWeight: 700, textAlign: "center", margin: "10px 0 2px" }}>{title}</h1>}
-      {sub && <div style={{ textAlign: "center", color: C.dim, fontSize: 13, marginBottom: 14 }}>{sub}</div>}
-      {children}
-      <div style={{ position: "absolute", top: "38%", left: 0, right: 0, pointerEvents: "none" }}>
-        {floats.map(f => (
-          <div key={f.id} style={{ position: "absolute", left: `${f.x}%`, fontWeight: 900, fontSize: 18, color: f.color, animation: "floatUp 1.2s ease-out forwards", textShadow: "0 2px 6px #000" }}>{f.text}</div>
-        ))}
-      </div>
-    </div>
-  );
 
   /* BASE */
   if (screen === "base") {
     const heroes = heroStats();
     return (
-      <Shell title="Your Hold" sub={`${REALMS.earthen.icon} ${REALMS.earthen.name} · Expeditions: ${runsDone}${caveUnlocked ? " · 🕳️ Deep" : ""}${forestUnlocked ? " · 🌲 Forest" : ""}${Object.keys(benched).length ? ` · 🩹 ${Object.keys(benched).length} recovering` : ""}`}>
+      <Shell glow={glow} run={run} floats={floats} title="Your Hold" sub={`${REALMS.earthen.icon} ${REALMS.earthen.name} · Expeditions: ${runsDone}${caveUnlocked ? " · 🕳️ Deep" : ""}${forestUnlocked ? " · 🌲 Forest" : ""}${Object.keys(benched).length ? ` · 🩹 ${Object.keys(benched).length} recovering` : ""}`}>
         {!username && (
           <div style={{ background: "#1c1730", border: `1px solid ${C.gold}66`, borderRadius: 12, padding: 16, marginBottom: 16, textAlign: "center" }}>
             <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 700, color: C.gold, fontSize: 16, marginBottom: 6 }}>⚔️ Name your champion</div>
@@ -1778,7 +1782,7 @@ export default function Emberhold() {
     const SZ = 36;
 
     return (
-      <Shell title={region.name} sub={`${realmOf(run.regionId).icon} ${realmOf(run.regionId).name} · Depth ${depthOf(run) + 1} of ${COLS + 2} · Corruption ${Math.round(corruption * 100)}%${modsOf(run).length ? ` · ${modsOf(run).map(m => m.name).join(" + ")}` : ""} · choose your next step`}>
+      <Shell glow={glow} run={run} floats={floats} title={region.name} sub={`${realmOf(run.regionId).icon} ${realmOf(run.regionId).name} · Depth ${depthOf(run) + 1} of ${COLS + 2} · Corruption ${Math.round(corruption * 100)}%${modsOf(run).length ? ` · ${modsOf(run).map(m => m.name).join(" + ")}` : ""} · choose your next step`}>
         <div style={{ overflowX: "auto", paddingBottom: 6, marginBottom: 12 }}>
           <div style={{
             display: "grid", gap: 6, justifyContent: "center",
@@ -1851,7 +1855,7 @@ export default function Emberhold() {
     const hasteOn = battle.tick < battle.hasteUntil;
     const slowOn = battle.tick < battle.slowUntil;
     return (
-      <Shell title={battle.type === "boss" ? REGIONS[run.regionId].boss.name.toUpperCase() : battle.type === "elite" ? "Elite Encounter" : "Ambush"}
+      <Shell glow={glow} run={run} floats={floats} title={battle.type === "boss" ? REGIONS[run.regionId].boss.name.toUpperCase() : battle.type === "elite" ? "Elite Encounter" : "Ambush"}
         sub={battle.started ? "Tap an enemy to focus fire · Tap ⓘ for stats · Tap glowing ults to cast" : "Tap ⓘ to inspect your foes, then begin when ready"}>
         {battle.type === "boss" && (
           <div style={{ height: 42, marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1968,7 +1972,7 @@ export default function Emberhold() {
 
   /* RELIC pick */
   if (screen === "relic" && pendingRelics && run) return (
-    <Shell title="A Shrine Hums" sub="Choose one relic — it lasts only this run">
+    <Shell glow={glow} run={run} floats={floats} title="A Shrine Hums" sub="Choose one relic — it lasts only this run">
       <MapToggle r={run} />
       <PartyPanel r={run} />
       <EffectsPanel r={run} />
@@ -2007,7 +2011,7 @@ export default function Emberhold() {
       setScreen("eventResult");
     };
     return (
-      <Shell title="A Strange Encounter">
+      <Shell glow={glow} run={run} floats={floats} title="A Strange Encounter">
         <MapToggle r={run} />
         <PartyPanel r={run} />
         <EffectsPanel r={run} />
@@ -2026,7 +2030,7 @@ export default function Emberhold() {
   if (screen === "eventResult" && eventResult) {
     const good = !/loses|Burned|Ambushed|-\d+ HP|snaps|bile|bruises|swats/i.test(eventResult.text);
     return (
-      <Shell title={good ? "Fortune Smiles" : "A Costly Choice"}>
+      <Shell glow={glow} run={run} floats={floats} title={good ? "Fortune Smiles" : "A Costly Choice"}>
         {eventResult.run && <>
           <MapToggle r={eventResult.run} />
           <PartyPanel r={eventResult.run} />
@@ -2046,7 +2050,7 @@ export default function Emberhold() {
     const isFinal = run.pos?.col === COLS;
     const region = REGIONS[run.regionId];
     return (
-      <Shell title={isFinal ? "🌀 The Last Waygate" : "🌀 A Waygate"}
+      <Shell glow={glow} run={run} floats={floats} title={isFinal ? "🌀 The Last Waygate" : "🌀 A Waygate"}
         sub={isFinal ? `Beyond this gate, only ${region.boss.name} remains.` : "A shimmering door home. Beyond it, the dark deepens."}>
         <MapToggle r={run} />
         <PartyPanel r={run} />
@@ -2092,7 +2096,7 @@ export default function Emberhold() {
     const detailCount = norm.length - majorCount;
     const shown = logDetail ? norm : norm.filter(e => e.level === "major");
     return (
-      <Shell title={title} sub="Review the battle, then continue your expedition">
+      <Shell glow={glow} run={run} floats={floats} title={title} sub="Review the battle, then continue your expedition">
         <div style={{ background: C.panel, borderRadius: 14, padding: 16, marginBottom: 14, border: `1px solid ${C.panel2}`, textAlign: "center" }}>
           <div style={{ fontSize: 12, color: C.dim, marginBottom: 6 }}>RESOURCES GAINED</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>
@@ -2154,7 +2158,7 @@ export default function Emberhold() {
     };
     if (!nxtReg) { finishRun(run, true, true); return null; }
     return (
-      <Shell title={titleByRegion[run.regionId] || `${curr.name} cleared!`}
+      <Shell glow={glow} run={run} floats={floats} title={titleByRegion[run.regionId] || `${curr.name} cleared!`}
         sub={subByRegion[run.regionId] || "A deeper region opens before you."}>
         <div style={{ background: C.panel, borderRadius: 14, padding: 16, marginBottom: 14, border: `1px solid ${C.gold}55` }}>
           <div style={{ fontSize: 13, color: C.dim, marginBottom: 6, textAlign: "center" }}>Equipment claimed — equip it now, before going deeper:</div>
@@ -2195,7 +2199,7 @@ export default function Emberhold() {
 
   /* MODIFIER reveal after descending */
   if (screen === "modifier" && run && run.modifier) return (
-    <Shell title="The Umbral Twists" sub="Descending has stirred the dark. A modifier now empowers every enemy ahead.">
+    <Shell glow={glow} run={run} floats={floats} title="The Umbral Twists" sub="Descending has stirred the dark. A modifier now empowers every enemy ahead.">
       <div style={{ background: C.panel, borderRadius: 14, padding: 22, textAlign: "center", margin: "12px 0 16px", border: `1px solid ${C.red}66` }}>
         <div style={{ fontSize: 36, marginBottom: 8 }}>🌑</div>
         <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 700, fontSize: 18, color: C.red }}>{run.modifier.name}</div>
@@ -2208,7 +2212,7 @@ export default function Emberhold() {
 
   /* SUMMARY */
   if (screen === "summary" && summary) return (
-    <Shell title={summary.ogreKill ? "👑 The Earthen Realm Is Cleansed!" : summary.bossKill ? "🏆 Victory!" : summary.extracted ? "Safely Home" : "The Party Has Fallen"}
+    <Shell glow={glow} run={run} floats={floats} title={summary.ogreKill ? "👑 The Earthen Realm Is Cleansed!" : summary.bossKill ? "🏆 Victory!" : summary.extracted ? "Safely Home" : "The Party Has Fallen"}
       sub={summary.extracted ? "Your hold grows stronger." : "Survivors limp home with half the spoils."}>
       <div style={{ background: C.panel, borderRadius: 14, padding: 18, textAlign: "center", margin: "14px 0", border: `1px solid ${C.panel2}` }}>
         <div style={{ fontSize: 13, color: C.dim, marginBottom: 8 }}>
@@ -2253,5 +2257,5 @@ export default function Emberhold() {
     </Shell>
   );
 
-  return <Shell title="Loading..." />;
+  return <Shell glow={glow} run={run} floats={floats} title="Loading..." />;
 }

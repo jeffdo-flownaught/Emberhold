@@ -20,6 +20,9 @@ LEADERBOARD (NEW)
   player reached (e.g. "Cave - depth 6", "Forest - boss
   defeated", "realm cleared!") along with the number of
   expeditions it took them to get there.
+- Fixed: typing a username no longer drops the text cursor after
+  each character (the page wrapper was rebuilding itself on every
+  keystroke; it now keeps a stable identity).
 
 HEROES & ULTIMATES (from 0.103)
 - Magic ultimates scale with magic attack: Cinder Nova burn
