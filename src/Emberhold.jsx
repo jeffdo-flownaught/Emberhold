@@ -1,66 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-/* ============ EMBERHOLD 0.100 — first playtest draft ============
-   0.100 marks the first version ready for external playtesting.
-   Identical to 0.022 in content; renumbered to signal the
-   milestone.
-
-   New in 0.022:
-   • Two new descent modifiers: Vengeful Spirits (enemies +10%
-     crit) and Stoneskin Blight (enemies +25% defenses).
-   • Phoenix Feather replaced by Marshlight Wisp (+5 evasion).
-   • Tanglevine Charm reworded ("Enemies attack 12% slower").
-   • Stat cards are mobile-first: tap-to-toggle everywhere,
-     larger tap targets, tap the open card to dismiss.
-   • DIFFICULTY UP: Hollow Sovereign 10% chance of 2 basic
-     reinforcements / 25% chance of 1; Herald of Gloaming 10%
-     chance of 1. Combat relics slightly reduced in all regions.
-
-   ============ previous: 0.021 ============
-   New in 0.021:
-   • Ogre Forest region power reduced 3× → 2.5× (simulation
-     showed the 2×→3× jump made the forest a 40-expedition
-     tier; 2.5× brings it in line with the cave tier).
-
-   ============ previous: 0.020 ============
-   New in 0.020 (pacing rebalance, simulation-tuned):
-   • REGION POWER: enemies multiply by region position — marsh
-     1×, cave 2×, forest 3× (region 4 will be 4×). Each region
-     is a real difficulty tier; the game gets harder as you go.
-   • Depth scaling softened 0.15 → 0.10 per depth (removes the
-     early marsh depth-6/7 wipe wall).
-   • Region loot greatly increased: marsh 1×, cave 2.5×,
-     forest 4× — funding the climb to the next tier.
-   • Forge cost reduced 60 → 45 gold per level.
-   • tools/simulate.js — rerunnable campaign simulator.
-
-   ============ previous: 0.019 ============
-   New in 0.019:
-   • Descent modifiers STACK — cave's modifier stays active in
-     the forest alongside the new one; all show in active
-     effects and the map subtitle. (Bug fix: the 2nd modifier
-     used to overwrite the 1st.)
-   • Equipment reworked: each region's boss drops from its own
-     2-item pool, every item has exactly one modifier (upgrade
-     system coming later to add a second). Marsh: Blade/Aegis,
-     Cave: Eye/Band, Forest: Amulet/Boots. Cache when full.
-   • Party panel ult % no longer shows decimals.
-   • Relic tuning: Ashen Fang +15% (was 25), Hourglass of Sol
-     20% (was 40), Echoing Charm 15% (was 30), Ember Caravan
-     15% (was 30), Forest Bounty 20% (was 30), Ember Chalice
-     +20 HP (was 30), Moss Heart +30 HP (was 40).
-   • The Ogre King now fights alongside a Twin-head Ogre.
-   • Realms: Marsh, Cave, and Forest belong to the Earthen
-     Realm. More realms will unlock beyond the final boss.
-   Carried from v6: two regions (Forgotten Marshland → Ogre
-   Forest), descent modifiers, attack-speed gauges, Taunt,
-   Fenwick (Ranger — hero haste), Thornwild (Druid — enemy
-   slow), party selection, boss-only equipment.
-============================================================ */
+/* EMBERHOLD — playable prototype.
+   Version: see VERSION constant below.
+   Patch history: PATCH_NOTES.txt in the repo root. */
 
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Alegreya+Sans:wght@400;500;700&display=swap');`;
 
-const VERSION = "0.100";
+const VERSION = "0.101";
 
 /* persistent save (localStorage) — survives the run/battle state isn't saved,
    only your Hold progression: resources, building levels, runs done, the
@@ -176,11 +122,12 @@ const COLS = 8;                 // encounter columns; +converge waygate +boss = 
 /* ---------- heroes (6) ---------- */
 const HERO_DEFS = [
   { id: "bran", name: "Branwen", cls: "Vanguard", icon: "🛡️", baseHp: 130, atk: 10, def: 12, matk: 4, mdef: 10, crit: 5, eva: 5, acc: 90, spd: 10, ultName: "Taunt", ultDesc: "Enemies attack Branwen for 2s; his defenses are doubled" },
-  { id: "kael", name: "Kaelis", cls: "Blade", icon: "⚔️", baseHp: 85, atk: 18, def: 6, matk: 4, mdef: 5, crit: 20, eva: 12, acc: 95, spd: 16, ultName: "Sever", ultDesc: "Strike focused enemy 3× damage" },
-  { id: "syra", name: "Syrene", cls: "Pyromancer", icon: "🔥", baseHp: 70, atk: 6, def: 4, matk: 16, mdef: 12, crit: 12, eva: 8, acc: 92, spd: 12, ultName: "Cinder Nova", ultDesc: "Magic damage to ALL enemies" },
-  { id: "prie", name: "Liora", cls: "Priest", icon: "🙏", baseHp: 75, atk: 5, def: 5, matk: 12, mdef: 14, crit: 5, eva: 8, acc: 92, spd: 11, ultName: "Sanctuary", ultDesc: "Heal the party 15 HP" },
-  { id: "rang", name: "Fenwick", cls: "Ranger", icon: "🏹", baseHp: 80, atk: 14, def: 5, matk: 3, mdef: 6, crit: 15, eva: 14, acc: 97, spd: 18, ultName: "Quickdraw", ultDesc: "Fenwick gains +60% attack speed for 3s" },
-  { id: "drui", name: "Thornwild", cls: "Druid", icon: "🌿", baseHp: 90, atk: 8, def: 8, matk: 12, mdef: 10, crit: 8, eva: 8, acc: 90, spd: 13, ultName: "Wildkin Bloom", ultDesc: "Focused enemy: -50% atk speed 4s & 15 dmg · heal lowest-HP ally 15" },
+  { id: "kael", name: "Kaelis", cls: "Blade", icon: "⚔️", baseHp: 85, atk: 15, def: 6, matk: 4, mdef: 5, crit: 5, eva: 12, acc: 95, spd: 14, ultName: "Sever", ultDesc: "Strike focused enemy 3× damage" },
+  { id: "syra", name: "Syrene", cls: "Pyromancer", icon: "🔥", baseHp: 70, atk: 6, def: 4, matk: 16, mdef: 12, crit: 12, eva: 8, acc: 92, spd: 12, ultName: "Cinder Nova", ultDesc: "Magic damage to ALL enemies + Burn (2 dmg/sec, stacks)" },
+  { id: "prie", name: "Liora", cls: "Priestess", icon: "🙏", baseHp: 75, atk: 5, def: 5, matk: 12, mdef: 14, crit: 5, eva: 8, acc: 92, spd: 11, ultName: "Sanctuary", ultDesc: "Heal the party 15 HP" },
+  { id: "rang", name: "Fenwick", cls: "Ranger", icon: "🏹", baseHp: 80, atk: 14, def: 5, matk: 3, mdef: 6, crit: 15, eva: 14, acc: 97, spd: 18, ultName: "Quickdraw", ultDesc: "Fenwick gains +50% attack speed for 3s" },
+  { id: "pala", name: "Aldric", cls: "Paladin", icon: "⚜️", baseHp: 110, atk: 11, def: 10, matk: 8, mdef: 10, crit: 8, eva: 7, acc: 92, spd: 12, ultName: "Consecration", ultDesc: "Party +50% defenses 4s · heal lowest-HP ally 15" },
+  { id: "drui", name: "Thornwild", cls: "Druid", icon: "🌿", baseHp: 90, atk: 8, def: 8, matk: 12, mdef: 10, crit: 8, eva: 8, acc: 90, spd: 13, ultName: "Wildkin Bloom", ultDesc: "Focused enemy: -50% atk speed 4s & 15 dmg · Regrowth: lowest ally heals 18 over 3s" },
 ];
 
 /* ---------- enemies ---------- */
@@ -215,10 +162,11 @@ const REGIONS = {
       { id: "hourglass", name: "Hourglass of Sol", icon: "⏳", desc: "Ultimates charge 15% faster", mod: { ultPct: 15 } },
       { id: "caravan", name: "Ember Caravan", icon: "🛒", desc: "+15% all resources from fights", mod: { allLootPct: 15 } },
       { id: "wisp", name: "Marshlight Wisp", icon: "✨", desc: "Heroes +5 evasion", mod: { evaFlat: 5 } },
+      { id: "phoenix", name: "Phoenix Feather", icon: "🪶", desc: "Auto-revive a fallen hero at 30% HP (stacks ×3)", mod: { phoenix: 1 } },
     ],
     events: [
-      { text: "A wounded pilgrim begs for coin. Her eyes glint strangely in the gloom.", a: { label: "Give 20 gold", needGold: 20, fn: s => ({ ...s, gold: s.gold - 20, atkMod: s.atkMod + 0.1, blessing: "She whispers a war-blessing: +10% attack this run." }) }, b: { label: "Walk past", fn: s => ({ ...s, blessing: "You walk past. Her eyes follow you into the dark. Nothing happens." }) } },
-      { text: "A shrine of the old Worldflame flickers above the black water.", a: { label: "Touch the flame", fn: s => Math.random() > 0.4 ? { ...s, atkMod: s.atkMod + 0.2, blessing: "The flame accepts you! +20% attack this run." } : { ...s, teamDmg: 20, blessing: "The flame rejects you. Burned: the party loses 20 HP." } }, b: { label: "Bow and leave", fn: s => ({ ...s, gold: s.gold + 15, blessing: "You bow and find a 15 gold offering at the shrine's base." }) } },
+      { text: "A wounded pilgrim begs for coin. Her eyes glint strangely in the gloom.", a: { label: "Give 20 gold", needGold: 20, fn: s => ({ ...s, gold: s.gold - 20, atkMod: s.atkMod + 0.06, blessing: "She whispers a war-blessing: +6% attack this run." }) }, b: { label: "Walk past", fn: s => ({ ...s, blessing: "You walk past. Her eyes follow you into the dark. Nothing happens." }) } },
+      { text: "A shrine of the old Worldflame flickers above the black water.", a: { label: "Touch the flame", fn: s => Math.random() > 0.4 ? { ...s, atkMod: s.atkMod + 0.1, blessing: "The flame accepts you! +10% attack this run." } : { ...s, teamDmg: 20, blessing: "The flame rejects you. Burned: the party loses 20 HP." } }, b: { label: "Bow and leave", fn: s => ({ ...s, gold: s.gold + 15, blessing: "You bow and find a 15 gold offering at the shrine's base." }) } },
       { text: "An abandoned supply cart sits half-swallowed by marsh roots.", a: { label: "Loot it quickly", fn: s => ({ ...s, wood: s.wood + 30, blessing: "You grab what you can: +30 wood salvaged." }) }, b: { label: "Search thoroughly (risky)", fn: s => Math.random() > 0.5 ? { ...s, wood: s.wood + 30, embers: s.embers + 3, blessing: "Hidden compartment! +30 wood and +3 embers!" } : { ...s, teamDmg: 25, blessing: "Bog hounds were waiting. Ambushed: -25 HP to the party." } } },
       { text: "A drowned chest glimmers beneath the black water.", a: { label: "Dive for it", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 60, blessing: "You wrench it free: +60 gold!" } : { ...s, teamDmg: 20, blessing: "Something pulls back. You escape, but the party loses 20 HP." } }, b: { label: "Leave it", fn: s => ({ ...s, blessing: "Some treasures are bait. You move on, unharmed." }) } },
       { text: "A fen witch offers a bubbling draught from her hut on stilts.", a: { label: "Drink it", fn: s => Math.random() > 0.5 ? { ...s, teamHeal: 40, blessing: "Warmth floods your veins: the party heals 40 HP." } : { ...s, teamDmg: 15, blessing: "It was swamp bile. The party loses 15 HP." } }, b: { label: "Refuse politely", fn: s => ({ ...s, blessing: "She cackles and waves you off. Nothing happens." }) } },
@@ -252,14 +200,15 @@ const REGIONS = {
       { id: "stalkereye", name: "Stalker's Eye", icon: "👁️", desc: "Heroes +6 evasion", mod: { evaFlat: 6 } },
       { id: "echocharm", name: "Echoing Charm", icon: "🔔", desc: "Ultimates charge 12% faster", mod: { ultPct: 12 } },
       { id: "hoard", name: "Glittering Hoard", icon: "✨", desc: "+30% all resources from fights", mod: { allLootPct: 30 } },
+      { id: "phoenix", name: "Phoenix Feather", icon: "🪶", desc: "Auto-revive a fallen hero at 30% HP (stacks ×3)", mod: { phoenix: 1 } },
     ],
     events: [
-      { text: "A vast cavern swallows your torchlight. Something distant echoes back.", a: { label: "Call out", fn: s => Math.random() > 0.5 ? { ...s, atkMod: s.atkMod + 0.15, blessing: "The echo returns as a battle-hymn. +15% attack this run." } : { ...s, teamDmg: 20, blessing: "Something heard you. Sharp claws rake the party from the dark: -20 HP." } }, b: { label: "Pass in silence", fn: s => ({ ...s, blessing: "You creep past. The cavern keeps its secrets." }) } },
+      { text: "A vast cavern swallows your torchlight. Something distant echoes back.", a: { label: "Call out", fn: s => Math.random() > 0.5 ? { ...s, atkMod: s.atkMod + 0.08, blessing: "The echo returns as a battle-hymn. +8% attack this run." } : { ...s, teamDmg: 20, blessing: "Something heard you. Sharp claws rake the party from the dark: -20 HP." } }, b: { label: "Pass in silence", fn: s => ({ ...s, blessing: "You creep past. The cavern keeps its secrets." }) } },
       { text: "A cluster of corrupted crystals pulses with cold light.", a: { label: "Touch the crystal", fn: s => Math.random() > 0.4 ? { ...s, embers: s.embers + 4, blessing: "Power flows in: +4 embers." } : { ...s, teamDmg: 15, blessing: "Frostburn lances through the party: -15 HP." } }, b: { label: "Carefully harvest a shard (10 wood)", needWood: 10, fn: s => s.wood >= 10 ? { ...s, wood: s.wood - 10, embers: s.embers + 2, blessing: "You pry one loose with a wedge: +2 embers (-10 wood)." } : { ...s, blessing: "Not enough wood for a wedge. You leave them be." } } },
-      { text: "A pile of cracked bones surrounds a glinting weapon-hilt.", a: { label: "Take the weapon", fn: s => Math.random() > 0.5 ? { ...s, atkMod: s.atkMod + 0.1, blessing: "A keen blade, marsh-forged: +10% attack this run." } : { ...s, teamDmg: 18, blessing: "The bones rise! You drive them back, but the party loses 18 HP." } }, b: { label: "Burn the pile", fn: s => ({ ...s, wood: Math.max(0, s.wood - 5), blessing: "You salt and burn it. -5 wood spent on cleansing rites." }) } },
+      { text: "A pile of cracked bones surrounds a glinting weapon-hilt.", a: { label: "Take the weapon", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 30, blessing: "Beneath the bones, a fat coinpurse: +30 gold." } : { ...s, teamDmg: 18, blessing: "The bones rise! You drive them back, but the party loses 18 HP." } }, b: { label: "Burn the pile", fn: s => ({ ...s, wood: Math.max(0, s.wood - 5), blessing: "You salt and burn it. -5 wood spent on cleansing rites." }) } },
       { text: "A cave-in blocks the way forward.", a: { label: "Dig through (risk injury)", fn: s => ({ ...s, teamDmg: 12, blessing: "Stone cuts and bruises, but you break through: -12 HP." }) }, b: { label: "Detour (costs 15 wood for braces)", needWood: 15, fn: s => s.wood >= 15 ? { ...s, wood: s.wood - 15, blessing: "Solid bracing. The detour is safe (-15 wood)." } : { ...s, teamDmg: 20, blessing: "Not enough wood. The detour collapses: -20 HP." } } },
       { text: "A grove of pale, glowing mushrooms ripples in unseen wind.", a: { label: "Harvest and brew", fn: s => Math.random() > 0.5 ? { ...s, teamHeal: 35, blessing: "A potent draught. The party heals 35 HP." } : { ...s, teamDmg: 20, blessing: "Worse than poison. The party loses 20 HP." } }, b: { label: "Leave the grove alone", fn: s => ({ ...s, blessing: "Better safe than sorry. You walk wide of the grove." }) } },
-      { text: "A weathered statue of a forgotten god kneels in a side chamber.", a: { label: "Make an offering (15 gold)", needGold: 15, fn: s => ({ ...s, gold: s.gold - 15, atkMod: s.atkMod + 0.12, blessing: "Old eyes stir. +12% attack this run." }) }, b: { label: "Pry loose its gem", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 40, blessing: "A fat gemstone tumbles free: +40 gold." } : { ...s, teamDmg: 18, blessing: "The statue's eyes flare. -18 HP and a curse follows you." } } },
+      { text: "A weathered statue of a forgotten god kneels in a side chamber.", a: { label: "Make an offering (15 gold)", needGold: 15, fn: s => ({ ...s, gold: s.gold - 15, teamHeal: 25, blessing: "Old eyes stir kindly. The party heals 25 HP." }) }, b: { label: "Pry loose its gem", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 40, blessing: "A fat gemstone tumbles free: +40 gold." } : { ...s, teamDmg: 18, blessing: "The statue's eyes flare. -18 HP and a curse follows you." } } },
     ],
   },
   forest: {
@@ -289,11 +238,12 @@ const REGIONS = {
       { id: "tanglecharm", name: "Tanglevine Charm", icon: "🌿", desc: "Enemies attack 12% slower", mod: { enemySpdPct: -12 } },
       { id: "hunterseye", name: "Hunter's Eye", icon: "🎯", desc: "Heroes +6 accuracy", mod: { accFlat: 6 } },
       { id: "bounty", name: "Forest Bounty", icon: "🍂", desc: "+20% all resources from fights", mod: { allLootPct: 20 } },
+      { id: "phoenix", name: "Phoenix Feather", icon: "🪶", desc: "Auto-revive a fallen hero at 30% HP (stacks ×3)", mod: { phoenix: 1 } },
       { id: "mossheart", name: "Moss Heart", icon: "💚", desc: "+30 HP heal after each fight", mod: { healAfterFight: 30 } },
     ],
     events: [
       { text: "An ogre cookpot bubbles unattended over a great fire.", a: { label: "Steal the stew", fn: s => Math.random() > 0.4 ? { ...s, teamHeal: 30, blessing: "Hearty and hot! The party heals 30 HP." } : { ...s, teamDmg: 20, blessing: "The cook returns mid-bite. You flee with bruises: -20 HP." } }, b: { label: "Tip it over and run", fn: s => ({ ...s, blessing: "Distant roars of ogre fury echo behind you. Worth it." }) } },
-      { text: "A wounded wolf pup whimpers in a snare.", a: { label: "Free and tend it (10 gold)", needGold: 10, fn: s => ({ ...s, gold: s.gold - 10, atkMod: s.atkMod + 0.1, blessing: "The pack watches from the shadows, then howls. Pack-blessed: +10% attack." }) }, b: { label: "Leave it", fn: s => ({ ...s, blessing: "Its cries fade behind you. The forest remembers." }) } },
+      { text: "A wounded wolf pup whimpers in a snare.", a: { label: "Free and tend it (10 gold)", needGold: 10, fn: s => ({ ...s, gold: s.gold - 10, atkMod: s.atkMod + 0.06, blessing: "The pack watches from the shadows, then howls. Pack-blessed: +6% attack." }) }, b: { label: "Leave it", fn: s => ({ ...s, blessing: "Its cries fade behind you. The forest remembers." }) } },
       { text: "An elder treant blocks the path with a riddle.", a: { label: "Answer the riddle", fn: s => Math.random() > 0.4 ? { ...s, embers: s.embers + 4, blessing: "Correct! Its bark splits to reveal +4 embers." } : { ...s, teamDmg: 10, blessing: "Wrong. A branch swats the party: -10 HP." } }, b: { label: "Go around (slow)", fn: s => ({ ...s, wood: s.wood + 10, blessing: "You gather fallen branches on the detour: +10 wood." }) } },
       { text: "Ogres have built a toll bridge over a ravine.", a: { label: "Pay the toll (30 gold)", needGold: 30, fn: s => ({ ...s, gold: s.gold - 30, blessing: "The ogres grunt and let you pass unharmed." }) }, b: { label: "Fight through", fn: s => ({ ...s, teamDmg: 20, gold: s.gold + 20, blessing: "You batter through and loot their toll box: -20 HP, +20 gold." }) } },
       { text: "Golden acorns gleam on a high branch.", a: { label: "Climb for them", fn: s => Math.random() > 0.5 ? { ...s, gold: s.gold + 50, blessing: "A pouch's worth! +50 gold." } : { ...s, teamDmg: 15, blessing: "The branch snaps. -15 HP and wounded pride." } }, b: { label: "Shake the trunk", fn: s => ({ ...s, gold: s.gold + 10, blessing: "A few drop loose: +10 gold." }) } },
@@ -337,12 +287,15 @@ const ITEMS = [
   /* marsh */
   { id: "blade", region: "marsh", name: "Heraldbane Blade", icon: "🗡️", desc: "+6 Attack", mod: { atk: 6 } },
   { id: "aegis", region: "marsh", name: "Gloamward Aegis", icon: "🛡️", desc: "+6 Defense", mod: { def: 6 } },
+  { id: "veil", region: "marsh", name: "Gloamward Veil", icon: "🧣", desc: "+5 Magic Defense", mod: { mdef: 5 } },
   /* cave */
   { id: "eye", region: "cave", name: "Eye of the Worldflame", icon: "🔮", desc: "+8 Magic Attack", mod: { matk: 8 } },
   { id: "band", region: "cave", name: "Quicksilver Band", icon: "💍", desc: "+4 Attack Speed", mod: { spd: 4 } },
+  { id: "sight", region: "cave", name: "Crystalline Sight", icon: "💎", desc: "+6 Critical", mod: { crit: 6 } },
   /* forest */
   { id: "amulet", region: "forest", name: "Emberheart Amulet", icon: "📿", desc: "+30 Max HP", mod: { hp: 30 } },
   { id: "boots", region: "forest", name: "Boots of the Wisp", icon: "🥾", desc: "+10 Evasion", mod: { eva: 10 } },
+  { id: "huntmark", region: "forest", name: "Huntmark Talisman", icon: "🎯", desc: "+6 Accuracy", mod: { acc: 6 } },
 ];
 
 /* ---------- helpers ---------- */
@@ -351,74 +304,73 @@ const shuffle = a => [...a].sort(() => Math.random() - 0.5);
 const aggRelics = relics => relics.reduce((a, r) => { for (const k in r.mod) a[k] = (a[k] || 0) + r.mod[k]; return a; }, {});
 
 function makeRunGrid() {
-  /* Grid is now 3 rows x (COLS+1) cols. The last col (index COLS) is the
-     "final waygate column": row 1 (middle) is ALWAYS a waygate; rows 0 and 2
-     are random non-waygate encounters. Every path can choose between healing
-     at the waygate or taking the alternate encounter for resources. */
+  /* Grid is 3 rows x (COLS+1) cols. The last col (index COLS) is the "final
+     waygate column": middle row is ALWAYS a waygate; rows 0/2 are combat.
+
+     SPECIAL-NODE SPACING (v0.102): waygates, shrines, and events are kept
+     out of adjacent columns, so back-to-back non-combat encounters are
+     impossible for the same type and rare (~15%) across types. Two specials
+     of DIFFERENT types may share one column (the player picks one). Special
+     counts are reduced (2 waygates + 2 shrines + 2 events) — paths hold
+     notably more enemy encounters. */
   const grid = Array.from({ length: 3 }, () => Array(COLS + 1).fill("fight"));
 
-  // gaps in cols 1 to COLS-1 only (col 0 and col COLS stay fully populated)
+  // gaps in cols 1 to COLS-1 only
   const gapCols = shuffle(Array.from({ length: COLS - 1 }, (_, i) => i + 1)).slice(0, 3);
   shuffle([0, 1, 2]).forEach((row, i) => { if (Math.random() < 0.75) grid[row][gapCols[i]] = null; });
 
-  const fightCells = () => {
+  const fightCells = (lo = 1, hi = COLS - 1) => {
     const out = [];
-    for (let r = 0; r < 3; r++) for (let c = 1; c < COLS; c++) if (grid[r][c] === "fight") out.push({ r, c });
+    for (let r = 0; r < 3; r++) for (let c = lo; c <= hi; c++) if (grid[r][c] === "fight") out.push({ r, c });
     return out;
   };
 
-  /* waygates: 3 in distinct columns. AT LEAST ONE must be in cols 4-7
-     (1-indexed depths 5-8) — force the first placement to satisfy that, then
-     fill the other two anywhere. */
-  const waygateCols = new Set();
-  let forcedOne = false;
-  for (const { r, c } of shuffle(fightCells())) {
-    if (forcedOne) break;
-    if (c >= 4 && c <= 7) { grid[r][c] = "waygate"; waygateCols.add(c); forcedOne = true; }
-  }
-  for (const { r, c } of shuffle(fightCells())) {
-    if (waygateCols.size >= 3) break;
-    if (waygateCols.has(c)) continue;
-    grid[r][c] = "waygate"; waygateCols.add(c);
-  }
+  /* adjacency bookkeeping — the final column is pre-seeded as a waygate */
+  const specialCols = new Map([[COLS, new Set(["waygate"])]]);
+  const note = (c, type) => { if (!specialCols.has(c)) specialCols.set(c, new Set()); specialCols.get(c).add(type); };
+  const hasType = (c, type) => specialCols.has(c) && specialCols.get(c).has(type);
+  const hasAny = c => specialCols.has(c);
 
-  /* shrines: 3 in distinct cols; no adjacent shrine cols */
-  const shrineCols = new Set();
-  for (const { r, c } of shuffle(fightCells())) {
-    if (shrineCols.size >= 3) break;
-    if (shrineCols.has(c) || shrineCols.has(c - 1) || shrineCols.has(c + 1)) continue;
-    grid[r][c] = "shrine"; shrineCols.add(c);
-  }
+  /* place one special of `type`:
+     pass 1 — strict: no same type within 1 col, no other special in adjacent
+              cols (sharing the SAME column with a different type is fine)
+     pass 2 — only if a single 15% roll passes: relax the cross-type
+              adjacency rule (same-type spacing stays absolute) */
+  const placeSpecial = (type, lo = 1, hi = COLS - 1) => {
+    const strict = ({ c }) =>
+      !hasType(c - 1, type) && !hasType(c, type) && !hasType(c + 1, type) &&
+      !hasAny(c - 1) && !hasAny(c + 1);
+    const relaxed = ({ c }) =>
+      !hasType(c - 1, type) && !hasType(c, type) && !hasType(c + 1, type);
+    let cells = shuffle(fightCells(lo, hi)).filter(strict);
+    if (!cells.length && Math.random() < 0.15) cells = shuffle(fightCells(lo, hi)).filter(relaxed);
+    if (!cells.length) return false;
+    const { r, c } = cells[0];
+    grid[r][c] = type; note(c, type);
+    return true;
+  };
 
-  /* events: 3 in distinct cols */
-  const eventCols = new Set();
-  for (const { r, c } of shuffle(fightCells())) {
-    if (eventCols.size >= 3) break;
-    if (eventCols.has(c)) continue;
-    grid[r][c] = "event"; eventCols.add(c);
-  }
+  /* waygates: one guaranteed in cols 4-7, one more anywhere */
+  placeSpecial("waygate", 4, 7);
+  placeSpecial("waygate");
+  /* shrines & events: 2 each */
+  placeSpecial("shrine"); placeSpecial("shrine");
+  placeSpecial("event"); placeSpecial("event");
 
   /* elites in mid-to-late cols */
   for (let r = 0; r < 3; r++) for (let c = 4; c < COLS; c++) {
     if (grid[r][c] === "fight" && Math.random() < 0.22) grid[r][c] = "elite";
   }
 
-  /* FINAL WAYGATE COLUMN (col COLS): middle row is always a waygate, rows
-     0 and 2 are random non-waygate encounters (subject to shrine adjacency).
-     Don't duplicate a shrine across both rows — every column stays mixed. */
+  /* FINAL WAYGATE COLUMN: middle row waygate, rows 0/2 are combat */
   grid[1][COLS] = "waygate";
-  const col7HasShrine = grid.some(row => row[COLS - 1] === "shrine");
-  const convPool = ["fight", "fight", "elite", "event"];
-  if (!col7HasShrine) convPool.push("shrine");
-  grid[0][COLS] = rnd(convPool);
-  const row2Pool = grid[0][COLS] === "shrine" ? convPool.filter(t => t !== "shrine") : convPool;
-  grid[2][COLS] = rnd(row2Pool);
+  grid[0][COLS] = Math.random() < 0.25 ? "elite" : "fight";
+  grid[2][COLS] = Math.random() < 0.25 ? "elite" : "fight";
 
-  /* ≥60% combat enforcement. Preserve the middle-row col-COLS waygate AND
-     keep ≥1 waygate in cols 4-7 from being converted back to fights. */
+  /* >=60% combat enforcement (with sparser specials this rarely fires) */
   const isCombat = t => t === "fight" || t === "elite";
   const count = () => {
-    let combat = 1, total = 1; // boss counts
+    let combat = 1, total = 1;
     for (let r = 0; r < 3; r++) for (let c = 0; c <= COLS; c++) {
       if (!grid[r][c]) continue;
       total++; if (isCombat(grid[r][c])) combat++;
@@ -431,15 +383,14 @@ function makeRunGrid() {
     return out;
   };
   const ss = collectByType("shrine"), es = collectByType("event");
-  const allWg = collectByType("waygate");
-  const wgFinal = ({ r, c }) => r === 1 && c === COLS;
-  const wg47 = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= 4 && c <= 7);
-  const wgLow = allWg.filter(({ r, c }) => !wgFinal({ r, c }) && c >= 0 && c <= 3);
-  const wgPool = [...shuffle(wgLow), ...shuffle(wg47).slice(0, Math.max(0, wg47.length - 1))];
+  const wg = collectByType("waygate").filter(({ r, c }) => !(r === 1 && c === COLS));
+  const wg47 = wg.filter(({ c }) => c >= 4 && c <= 7);
+  const wgLow = wg.filter(({ c }) => c < 4 || c > 7);
   const pool = [
     ...shuffle(ss).slice(0, Math.max(0, ss.length - 1)),
     ...shuffle(es).slice(0, Math.max(0, es.length - 1)),
-    ...wgPool,
+    ...shuffle(wgLow),
+    ...shuffle(wg47).slice(0, Math.max(0, wg47.length - 1)),
   ];
   let { combat, total } = count();
   while (combat / total < 0.6 && pool.length) {
@@ -448,30 +399,14 @@ function makeRunGrid() {
     combat++;
   }
 
-  /* hard guarantees */
+  /* hard guarantees: >=1 shrine, >=1 event, >=1 waygate in cols 4-7 */
   const has = type => grid.some(row => row.some(t => t === type));
-  const placeOne = type => {
-    const cells = fightCells();
-    if (!cells.length) return;
-    if (type === "shrine") {
-      const usedCols = new Set();
-      grid.forEach(row => row.forEach((t, c) => { if (t === "shrine") usedCols.add(c); }));
-      for (const { r, c } of shuffle(cells)) {
-        if (usedCols.has(c - 1) || usedCols.has(c + 1)) continue;
-        grid[r][c] = "shrine"; return;
-      }
-    }
-    const { r, c } = cells[0];
-    grid[r][c] = type;
-  };
-  if (!has("shrine")) placeOne("shrine");
-  if (!has("event")) placeOne("event");
-
-  /* defensive — make absolutely sure we have ≥1 waygate in cols 4-7 */
+  if (!has("shrine")) placeSpecial("shrine") || (() => { const c = fightCells(); if (c.length) grid[c[0].r][c[0].c] = "shrine"; })();
+  if (!has("event")) placeSpecial("event") || (() => { const c = fightCells(); if (c.length) grid[c[0].r][c[0].c] = "event"; })();
   let hasWg47 = false;
   for (let r = 0; r < 3; r++) for (let c = 4; c <= 7; c++) if (grid[r][c] === "waygate") hasWg47 = true;
   if (!hasWg47) {
-    outer: for (const c of shuffle([4, 5, 6, 7])) {
+    outer: for (const c of shuffle([4, 5, 6])) { /* col 7 borders the final waygate */
       for (const r of shuffle([0, 1, 2])) {
         if (grid[r][c] === "fight") { grid[r][c] = "waygate"; break outer; }
       }
@@ -585,7 +520,7 @@ function effectiveHero(h, r, b) {
     crit: h.crit + (ag.critFlat || 0),
     eva: h.eva + (ag.evaFlat || 0),
     acc: h.acc + accAdj,
-    spd: Math.round(h.spd * spdMul * (hasteOn ? 1.6 : 1)),
+    spd: Math.round(h.spd * spdMul * (hasteOn ? 1.5 : 1)),
     ultPerAtk: Math.round(20 * (1 + (ag.ultPct || 0) / 100)),
   };
 }
@@ -745,7 +680,7 @@ export default function Emberhold() {
     setRun({
       regionId: "marsh", modifier: null, modifiers: [], drops: [],
       grid: makeRunGrid(), pos: null, visited: [],
-      heroes, gold: 0, wood: 0, embers: 0, relics: [], atkMod: 0, phoenixUsed: false,
+      heroes, gold: 0, wood: 0, embers: 0, relics: [], atkMod: 0, phoenixSpent: 0, lastEventText: null,
       corruptionBaseline: 0,
     });
     setScreen("map");
@@ -776,15 +711,24 @@ export default function Emberhold() {
 
     if (type === "fight" || type === "elite" || type === "boss") {
       const enemies = makeEnemies(r2.regionId, type, depth, modsOf(r2));
-      setBattle({ enemies, type, log: [{ text: "The enemy blocks your path. Steel yourselves...", level: "major" }], focus: enemies[0].key, surge: null, tick: 0, started: false, tauntUntil: 0, hasteUntil: 0, slowUntil: 0, slowedKey: null });
+      setBattle({ enemies, type, log: [{ text: "The enemy blocks your path. Steel yourselves...", level: "major" }], focus: enemies[0].key, surge: null, tick: 0, started: false, tauntUntil: 0, hasteUntil: 0, slowUntil: 0, slowedKey: null, consecUntil: 0, hotHeroId: null, hotUntil: 0, hotPerSec: 0 });
       setScreen("battle");
     } else if (type === "shrine") {
-      const pool = REGIONS[r2.regionId].relics.filter(x => !r2.relics.find(y => y.id === x.id));
+      const pool = REGIONS[r2.regionId].relics.filter(x =>
+        x.id === "phoenix"
+          ? r2.relics.filter(y => y.id === "phoenix").length < 3
+          : !r2.relics.find(y => y.id === x.id));
       const opts = [];
       while (opts.length < Math.min(3, pool.length)) { const x = rnd(pool); if (!opts.includes(x)) opts.push(x); }
       setPendingRelics(opts); setScreen("relic");
     } else if (type === "event") {
-      setEventCard(rnd(REGIONS[r2.regionId].events)); setScreen("event");
+      {
+        const pool = REGIONS[r2.regionId].events.filter(ev => ev.text !== r2.lastEventText);
+        const card = rnd(pool.length ? pool : REGIONS[r2.regionId].events);
+        setRun({ ...r2, lastEventText: card.text });
+        setEventCard(card);
+      }
+      setScreen("event");
     } else if (type === "waygate") {
       /* the gate's light mends the party: living heal 30% max HP,
          the fallen are revived at 20% max HP */
@@ -818,7 +762,7 @@ export default function Emberhold() {
       let log = [...b.log];
       let surge = b.surge ? { ...b.surge } : null;
       const tick = b.tick + 1;
-      let phoenixUsed = r.phoenixUsed;
+      let phoenixSpent = r.phoenixSpent || (r.phoenixUsed ? 1 : 0);
 
       const atkMul = (1 + r.atkMod) * (1 + (ag.atkPct || 0) / 100);
       const eAtkMul = 1 + (ag.enemyAtkPct || 0) / 100; /* descent atk modifier is baked into enemy stats multiplicatively */
@@ -833,7 +777,7 @@ export default function Emberhold() {
       const focusTarget = () => enemies.find(e => e.key === b.focus && e.hp > 0) || enemies.find(e => e.hp > 0);
       heroes.forEach(h => {
         if (!h.alive) return;
-        const haste = h.id === "rang" && tick < b.hasteUntil ? 1.6 : 1;
+        const haste = h.id === "rang" && tick < b.hasteUntil ? 1.5 : 1;
         h.gauge = (h.gauge || 0) + h.spd * heroSpdBase * haste;
         if (h.gauge >= 100) {
           h.gauge -= 100;
@@ -862,6 +806,7 @@ export default function Emberhold() {
           const t = (tick < b.tauntUntil && bran) ? bran : rnd(live);
           const td = { ...t, def: t.def + defAdj, mdef: t.mdef + (ag.mdefFlat || 0), eva: t.eva + (ag.evaFlat || 0) };
           if (t.id === "bran" && tick < b.tauntUntil) { td.def *= 2; td.mdef *= 2; } /* Taunt doubles his defenses */
+          if (tick < (b.consecUntil || 0)) { td.def = Math.round(td.def * 1.5); td.mdef = Math.round(td.mdef * 1.5); } /* Consecration */
           if (rollHit(e, td)) {
             const { dmg, crit } = rollDamage({ ...e, atk: Math.round(e.atk * eAtkMul), matk: Math.round(e.matk * eAtkMul) }, td, 1);
             t.hp -= dmg;
@@ -883,6 +828,7 @@ export default function Emberhold() {
               const t = (tick < b.tauntUntil && bran) ? bran : rnd(live);
               const td = { ...t, def: t.def + defAdj, mdef: t.mdef + (ag.mdefFlat || 0), eva: t.eva + (ag.evaFlat || 0) };
               if (t.id === "bran" && tick < b.tauntUntil) { td.def *= 2; td.mdef *= 2; } /* Taunt doubles his defenses */
+              if (tick < (b.consecUntil || 0)) { td.def = Math.round(td.def * 1.5); td.mdef = Math.round(td.mdef * 1.5); } /* Consecration */
               const { dmg: raw } = rollDamage({ ...src, atk: Math.round(src.atk * eAtkMul), matk: Math.round(src.matk * eAtkMul), crit: 0 }, td, 3);
               const dmg = surge.braced ? Math.round(raw * 0.3) : raw;
               t.hp -= dmg;
@@ -900,12 +846,23 @@ export default function Emberhold() {
         }
       }
 
+      /* burn DoT — generic: any unit with .burn ticks 3 dmg/sec per stack */
+      if (tick % 4 === 0) {
+        enemies.forEach(e => { if (e.hp > 0 && (e.burnDps || 0) > 0) e.hp -= e.burnDps; });
+        heroes.forEach(h => { if (h.alive && (h.burnDps || 0) > 0) h.hp -= h.burnDps; });
+        /* Regrowth heal-over-time (Wildkin Bloom) */
+        if (tick < (b.hotUntil || 0) && b.hotHeroId) {
+          const hh = heroes.find(x => x.id === b.hotHeroId && x.alive);
+          if (hh) hh.hp = Math.min(hh.maxHp, hh.hp + (b.hotPerSec || 0));
+        }
+      }
+
       /* deaths */
       heroes.forEach(h => {
         if (h.alive && h.hp <= 0) {
-          if (ag.phoenix && !phoenixUsed) {
-            h.hp = Math.round(h.maxHp * 0.3); phoenixUsed = true;
-            log.push({ text: `🪶 ${h.name} rises from the ashes!`, level: "major" });
+          if ((ag.phoenix || 0) > phoenixSpent) {
+            h.hp = Math.round(h.maxHp * 0.3); phoenixSpent++;
+            log.push({ text: `🪶 A Phoenix Feather ignites — ${h.name} rises from the ashes! (${(ag.phoenix || 0) - phoenixSpent} left)`, level: "major" });
           } else { h.alive = false; h.hp = 0; log.push({ text: `☠️ ${h.name} has fallen!`, level: "major" }); }
         }
       });
@@ -914,10 +871,10 @@ export default function Emberhold() {
       const won = enemies.every(e => e.hp <= 0);
       const lost = heroes.every(h => !h.alive);
 
-      setRun({ ...r, heroes, phoenixUsed });
+      setRun({ ...r, heroes, phoenixSpent });
       setBattle({ ...b, enemies, log, surge, tick });
 
-      if (won) { clearInterval(iv); winFight({ ...r, heroes, phoenixUsed }, heroes, b.type, log); }
+      if (won) { clearInterval(iv); winFight({ ...r, heroes, phoenixSpent }, heroes, b.type, log); }
       else if (lost) { clearInterval(iv); finishRun({ ...r, heroes }, false); }
     }, TICK_MS);
     return () => clearInterval(iv);
@@ -950,7 +907,7 @@ export default function Emberhold() {
     let heroes = r.heroes.map(x => ({ ...x }));
     let enemies = b.enemies.map(e => ({ ...e }));
     let log = [...b.log];
-    let { tauntUntil, hasteUntil, slowUntil, slowedKey } = b;
+    let { tauntUntil, hasteUntil, slowUntil, slowedKey, consecUntil = 0, hotHeroId = null, hotUntil = 0, hotPerSec = 0 } = b;
     const ag = aggRelics(r.relics);
     const atkMul = (1 + r.atkMod) * (1 + (ag.atkPct || 0) / 100);
     /* ultimates scale +2% per depth (damage, healing, and durations) */
@@ -970,16 +927,33 @@ export default function Emberhold() {
       enemies = enemies.map(e => {
         if (e.hp <= 0) return e;
         const { dmg } = rollDamage({ ...h, matk: Math.round(h.matk * atkMul) }, e, 2 * ultScale);
-        return { ...e, hp: Math.max(0, e.hp - dmg) };
+        /* Burn: stacking DoT, persistent for the whole fight. Burn damage is
+           tracked as accumulated dps (burnDps) rather than stacks × constant,
+           so different burn sources can deal different damage per second.
+           Syrene's nova applies 2 dmg/sec per cast. burnStacks is display-only. */
+        return { ...e, hp: Math.max(0, e.hp - dmg), burnDps: (e.burnDps || 0) + 2, burnStacks: (e.burnStacks || 0) + 1 };
       });
-      log.push({ text: "🔥 Cinder Nova engulfs all foes!", level: "major" }); addFloat("🔥 NOVA", C.ember);
+      log.push({ text: "🔥 Cinder Nova engulfs all foes — they BURN!", level: "major" }); addFloat("🔥 NOVA", C.ember);
     }
     if (h.id === "prie") {
       const heal = Math.round(15 * ultScale);
       heroes = heroes.map(x => x.alive ? { ...x, hp: Math.min(x.maxHp, x.hp + heal) } : x);
       log.push({ text: `🙏 Sanctuary! Party healed +${heal}`, level: "major" }); addFloat(`+${heal} ❤️`, C.green);
     }
-    if (h.id === "rang") { hasteUntil = b.tick + Math.round(12 * ultScale); log.push({ text: "🏹 Quickdraw! Fenwick attacks 60% faster", level: "major" }); addFloat("🏹 HASTE", C.blue); }
+    if (h.id === "rang") { hasteUntil = b.tick + Math.round(12 * ultScale); log.push({ text: "🏹 Quickdraw! Fenwick attacks 50% faster", level: "major" }); addFloat("🏹 HASTE", C.blue); }
+    if (h.id === "pala") {
+      consecUntil = b.tick + Math.round(16 * ultScale);
+      const heal = Math.round(15 * ultScale);
+      const living = heroes.map((x, i) => ({ x, i })).filter(v => v.x.alive);
+      let healedName = "";
+      if (living.length) {
+        const lowest = living.reduce((a, c) => (c.x.hp / c.x.maxHp) < (a.x.hp / a.x.maxHp) ? c : a);
+        heroes[lowest.i] = { ...heroes[lowest.i], hp: Math.min(heroes[lowest.i].maxHp, heroes[lowest.i].hp + heal) };
+        healedName = heroes[lowest.i].name;
+      }
+      log.push({ text: `⚜️ Consecration! Party defenses +50%${healedName ? ` · ${healedName} +${heal} HP` : ""}`, level: "major" });
+      addFloat("⚜️ CONSECRATE", C.gold);
+    }
     if (h.id === "drui") {
       const live = enemies.filter(e => e.hp > 0);
       const t = enemies.find(e => e.key === b.focus && e.hp > 0) || live[0];
@@ -988,12 +962,15 @@ export default function Emberhold() {
         const dmg = Math.round(15 * ultScale);
         const targetIdx = enemies.findIndex(e => e.key === t.key);
         enemies[targetIdx] = { ...enemies[targetIdx], hp: Math.max(0, enemies[targetIdx].hp - dmg) };
-        const heal = Math.round(15 * ultScale);
-        const livingHeroes = heroes.map((h, i) => ({ h, i })).filter(x => x.h.alive);
+        /* Regrowth: heal-over-time on the lowest-HP ally — 6/sec for 3s
+           (18 total, slightly more than Sanctuary's 15 per ally) */
+        const livingHeroes = heroes.map((h2, i2) => ({ h: h2, i: i2 })).filter(x => x.h.alive);
         if (livingHeroes.length) {
           const lowest = livingHeroes.reduce((a, c) => (c.h.hp / c.h.maxHp) < (a.h.hp / a.h.maxHp) ? c : a);
-          heroes[lowest.i] = { ...heroes[lowest.i], hp: Math.min(heroes[lowest.i].maxHp, heroes[lowest.i].hp + heal) };
-          log.push({ text: `🌿 Wildkin Bloom! ${t.name} -${dmg} & slowed · ${heroes[lowest.i].name} +${heal} HP`, level: "major" });
+          hotHeroId = heroes[lowest.i].id;
+          hotUntil = b.tick + Math.round(12 * ultScale);
+          hotPerSec = Math.round(6 * ultScale);
+          log.push({ text: `🌿 Wildkin Bloom! ${t.name} -${dmg} & slowed · Regrowth on ${heroes[lowest.i].name} (+${hotPerSec}/sec)`, level: "major" });
           addFloat(`-${dmg} 🌿`, C.green);
         }
       }
@@ -1001,7 +978,7 @@ export default function Emberhold() {
 
     heroes[i] = { ...heroes[i], ult: 0 };
     setRun({ ...r, heroes });
-    setBattle({ ...b, enemies, log, tauntUntil, hasteUntil, slowUntil, slowedKey });
+    setBattle({ ...b, enemies, log, tauntUntil, hasteUntil, slowUntil, slowedKey, consecUntil, hotHeroId, hotUntil, hotPerSec });
   };
 
   const winFight = (r, heroes, type, fullLog) => {
@@ -1081,7 +1058,7 @@ export default function Emberhold() {
     setLastModifierId(m.id);
     const heroes = r.heroes.map(h => h.alive ? { ...h, hp: Math.min(h.maxHp, h.hp + Math.round(h.maxHp * 0.3)), gauge: 0, ult: 0 } : h);
     const carriedBaseline = corruption / 3;
-    setRun({ ...r, regionId: nxt, modifier: m, modifiers: [...active, m], grid: makeRunGrid(), pos: null, visited: [], heroes, corruptionBaseline: carriedBaseline });
+    setRun({ ...r, regionId: nxt, modifier: m, modifiers: [...active, m], grid: makeRunGrid(), pos: null, visited: [], heroes, corruptionBaseline: carriedBaseline, lastEventText: null });
     setScreen("modifier");
   };
 
@@ -1279,12 +1256,13 @@ export default function Emberhold() {
         <div style={{ color: C.dim, fontSize: 11, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>ACTIVE EFFECTS</div>
         {r.atkMod > 0 && <div style={{ color: C.green }}>🌟 Event blessing: +{Math.round(r.atkMod * 100)}% attack this run</div>}
         {activeMods.map(m => <div key={m.id} style={{ color: C.red }}>🌑 {m.name}: {m.desc}</div>)}
+
         {r.relics.length > 0 && (
           <div style={{ marginTop: 2 }}>
             <div style={{ color: C.gold, marginBottom: 2 }}>Relics:</div>
-            {r.relics.map(x => (
+            {Object.values(r.relics.reduce((acc, x) => { (acc[x.id] = acc[x.id] || { ...x, n: 0 }).n++; return acc; }, {})).map(x => (
               <div key={x.id} style={{ color: C.text, paddingLeft: 8, lineHeight: 1.5 }}>
-                {x.icon} <span style={{ fontWeight: 700, color: C.gold }}>{x.name}</span> <span style={{ color: C.dim }}>— {x.desc}</span>
+                {x.icon} <span style={{ fontWeight: 700, color: C.gold }}>{x.name}{x.n > 1 ? ` ×${x.n}` : ""}</span> <span style={{ color: C.dim }}>— {x.desc}</span>
               </div>
             ))}
           </div>
@@ -1547,7 +1525,7 @@ export default function Emberhold() {
                   animation: isSurger && surging ? "shake .4s infinite" : "none",
                 }}>
                 <div style={{ fontSize: 26 }}>{isSurger && surging ? "⚠️" : e.icon}</div>
-                <div style={{ fontSize: 10, color: C.dim, height: 24 }}>{e.name}{slowOn && battle.slowedKey === e.key ? " 🌿" : ""}</div>
+                <div style={{ fontSize: 10, color: C.dim, height: 24 }}>{e.name}{slowOn && battle.slowedKey === e.key ? " 🌿" : ""}{(e.burnStacks || 0) > 0 ? ` 🔥×${e.burnStacks}` : ""}</div>
                 <Bar val={e.hp} max={e.maxHp} color={C.umbral} h={6} />
                 <div style={{ margin: "3px 0" }}><Bar val={e.gauge || 0} max={100} color={C.blue} h={4} /></div>
                 <div style={{ fontSize: 11 }}>{e.hp}</div>
@@ -1562,6 +1540,8 @@ export default function Emberhold() {
           {tauntOn && <span style={{ color: C.blue, marginRight: 10 }}>🛡️ Taunt active</span>}
           {hasteOn && <span style={{ color: C.blue, marginRight: 10 }}>🏹 Fenwick hasted</span>}
           {slowOn && <span style={{ color: C.umbral }}>🌿 {battle.enemies.find(e => e.key === battle.slowedKey)?.name || "Enemy"} blooming</span>}
+          {battle.tick < (battle.consecUntil || 0) && <span style={{ color: C.gold, marginLeft: 10 }}>⚜️ Consecrated</span>}
+          {battle.tick < (battle.hotUntil || 0) && battle.hotHeroId && <span style={{ color: C.green, marginLeft: 10 }}>🌿 Regrowth on {run.heroes.find(x => x.id === battle.hotHeroId)?.name}</span>}
         </div>
 
         {/* Fight! (inline) */}
@@ -1647,7 +1627,19 @@ export default function Emberhold() {
   if (screen === "event" && eventCard && run) {
     const resolve = choice => {
       let r2 = choice.fn({ ...run });
-      if (r2.teamDmg) r2 = { ...r2, heroes: r2.heroes.map(h => h.alive ? { ...h, hp: Math.max(1, h.hp - r2.teamDmg) } : h), teamDmg: 0 };
+      if (r2.teamDmg) {
+        /* event damage can down heroes; Phoenix Feathers auto-revive at 30% */
+        const ag2 = aggRelics(r2.relics);
+        let spent = r2.phoenixSpent || 0;
+        const heroes2 = r2.heroes.map(h => {
+          if (!h.alive) return h;
+          const hp = h.hp - r2.teamDmg;
+          if (hp > 0) return { ...h, hp };
+          if ((ag2.phoenix || 0) > spent) { spent++; return { ...h, hp: Math.round(h.maxHp * 0.3) }; }
+          return { ...h, hp: 0, alive: false };
+        });
+        r2 = { ...r2, heroes: heroes2, phoenixSpent: spent, teamDmg: 0 };
+      }
       if (r2.teamHeal) r2 = { ...r2, heroes: r2.heroes.map(h => h.alive ? { ...h, hp: Math.min(h.maxHp, h.hp + r2.teamHeal) } : h), teamHeal: 0 };
       setEventCard(null);
       setEventResult({ text: r2.blessing || "Nothing came of it. The road continues.", run: r2 });
@@ -1703,7 +1695,8 @@ export default function Emberhold() {
           <div style={{ fontSize: 13, color: C.dim, marginBottom: 6 }}>Loot secured if you extract now</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: C.gold }}>🪙{run.gold} 🪵{run.wood} ✨{run.embers}</div>
           <div style={{ fontSize: 12, color: C.red, marginTop: 8 }}>If your party falls deeper in, you keep only half.</div>
-          {isFinal && <div style={{ fontSize: 12, color: C.gold, marginTop: 6 }}>⚔️ Bosses drop equipment — items can be won nowhere else.</div>}
+          {isFinal && <div style={{ fontSize: 12, color: C.gold, marginTop: 6 }}>⚔️ Only bosses can drop equipment.</div>}
+
         </div>
         <div style={{ display: "grid", gap: 10 }}>
           <Btn full color={C.umbral} onClick={() => finishRun(run, true)}>🏠 Extract — keep everything</Btn>

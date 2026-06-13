@@ -1,0 +1,73 @@
+EMBERHOLD — PATCH NOTES
+=======================
+
+Versioning: numbered releases (0.100, 0.101, ...) mark playtest milestones.
+Interim fixes append letters (0.101a, 0.101b, ...) until the next number.
+
+----------------------------------------------------------------------
+v0.101 — playtest patch 1
+----------------------------------------------------------------------
+HEROES
+- Kaelis (Blade) nerfed: attack 15 (was 18), critical 5 (was 20),
+  attack speed 14 (was 16).
+- Fenwick: Quickdraw reduced to +50% attack speed (was +60%).
+- Syrene: Cinder Nova now applies BURN — a stacking damage-over-time
+  that lasts the whole fight. Each cast adds 2 damage per second.
+  Burn is tracked per-source, so future burn effects can deal
+  different damage rates (and enemies will eventually burn heroes).
+- NEW HERO: Aldric the Paladin — balanced tank/damage/support.
+  Consecration: party +50% defenses for 4s and heals the lowest-HP
+  ally 15.
+- Liora is now titled PRIESTESS; Sanctuary unchanged (heal party 15).
+- Thornwild: Wildkin Bloom's heal is now REGROWTH — the lowest-HP
+  ally heals 6/sec for 3s (18 total, slightly more than Sanctuary
+  per target) instead of an instant 15.
+
+RELICS
+- Phoenix Feather returns: auto-revives a fallen hero at 30% HP
+  during combat OR after a damaging event. Found in every region's
+  shrine pool and stacks up to 3 per run.
+- Combat relics slightly reduced in all regions: Ashen Fang +12%,
+  Warding Idol -12%, Hourglass of Sol 15%, Crystal Lens +10%,
+  Spelunker's Lantern +5, Vein of Quartz +4, Stalker's Eye +6,
+  Echoing Charm 12%, Wolfsblood Vial +15%, Ironbark Hide +3,
+  Hunter's Eye +6, Tanglevine Charm -12% (also reworded).
+
+EQUIPMENT
+- Each region's boss now has a 3-item pool (9 single-modifier items
+  total): Marsh adds Gloamward Veil (+5 MDef), Cave adds Crystalline
+  Sight (+6 Crit), Forest adds Huntmark Talisman (+6 Acc).
+- Waygate text clarified: "Only bosses can drop equipment."
+
+MAP & ENCOUNTERS
+- Waygates, shrines, and events are spaced out: the same type never
+  appears in back-to-back columns, different types back-to-back are
+  rare (~15%). Special counts reduced to 2 waygates + 2 shrines +
+  2 events (plus the final waygate). Paths hold notably more enemy
+  encounters (combat density ~73%, was ~63%).
+- Events never repeat back-to-back within a region.
+- Event combat buffs reduced (values roughly halved); two buff
+  events now give gold/healing instead.
+- Boss reinforcements: the Hollow Sovereign has a 10% chance of two
+  basic-enemy adds and 25% chance of one; the Herald of Gloaming has
+  a 10% chance of one.
+
+UI
+- Stat cards are mobile-first: tap-to-toggle everywhere, larger tap
+  targets, tap the open card to dismiss. The Hold's stat icon sits
+  inline after the hero description (no longer overlaps attack speed).
+- Two new descent modifiers: Vengeful Spirits (enemies +10% crit) and
+  Stoneskin Blight (enemies +25% defenses).
+
+----------------------------------------------------------------------
+v0.100 — first playtest draft
+----------------------------------------------------------------------
+- 3 regions in the Earthen Realm (Forgotten Marshland, Hollowed Deep,
+  Ogre Forest) with region power scaling 1x / 2x / 2.5x.
+- 6 heroes with tap-to-cast ultimates charged by attacks.
+- Branching Slay-the-Spire-style maps, guaranteed mid-run waygates,
+  stacking descent modifiers, region-specific boss equipment, relics,
+  events, boss-kill recovery, hero benching, treasure caches.
+- Full save persistence (localStorage), procedural ambient music with
+  volume control, post-fight combat review with Simple/Detailed log.
+- Campaign balance simulator at tools/simulate.js.
