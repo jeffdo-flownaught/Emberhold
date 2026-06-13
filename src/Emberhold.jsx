@@ -6,7 +6,89 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Alegreya+Sans:wght@400;500;700&display=swap');`;
 
-const VERSION = "0.103";
+/* ============================================================
+   LEADERBOARD — Firebase Cloud Firestore via REST API
+   ------------------------------------------------------------
+   Works from a static GitHub Pages deployment with no SDK bundle.
+   SETUP (one time):
+     1. Create a Firebase project at https://console.firebase.google.com
+     2. Build → Firestore Database → Create database (Production mode)
+     3. Project settings → General → copy your Project ID
+     4. Paste it into FIREBASE_PROJECT_ID below.
+     5. Firestore → Rules: allow public read + create on the
+        "leaderboard" collection, e.g.:
+          rules_version = '2';
+          service cloud.firestore {
+            match /databases/{db}/documents {
+              match /leaderboard/{doc} {
+                allow read: if true;
+                allow create: if request.resource.data.progress is int
+                              && request.resource.data.username is string
+                              && request.resource.data.username.size() <= 24;
+                allow update, delete: if false;
+              }
+            }
+          }
+   Until a project ID is set, the leaderboard UI shows a friendly
+   "not configured yet" message and never errors.
+   ============================================================ */
+const FIREBASE_PROJECT_ID = "emberhold-2bef6"; // Firebase project ID
+const LB_ENABLED = () => FIREBASE_PROJECT_ID.length > 0;
+const LB_BASE = () => `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+
+/* submit a player's best progress. Fire-and-forget; never throws. */
+async function lbSubmit({ username, progress, label, expeditions }) {
+  if (!LB_ENABLED() || !username) return false;
+  try {
+    const body = {
+      fields: {
+        username: { stringValue: String(username).slice(0, 24) },
+        progress: { integerValue: String(Math.round(progress)) },
+        label: { stringValue: String(label).slice(0, 48) },
+        expeditions: { integerValue: String(Math.max(0, Math.round(expeditions || 0))) },
+        version: { stringValue: VERSION },
+        ts: { integerValue: String(Date.now()) },
+      },
+    };
+    const res = await fetch(`${LB_BASE()}/leaderboard`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    return res.ok;
+  } catch { return false; }
+}
+
+/* fetch the top entries, best progress first. Returns [] on any error.
+   Keeps only each username's single best score client-side. */
+async function lbFetchTop(limit = 25) {
+  if (!LB_ENABLED()) return null;
+  try {
+    const query = {
+      structuredQuery: {
+        from: [{ collectionId: "leaderboard" }],
+        orderBy: [{ field: { fieldPath: "progress" }, direction: "DESCENDING" }],
+        limit: 300,
+      },
+    };
+    const res = await fetch(`${LB_BASE()}:runQuery`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(query),
+    });
+    if (!res.ok) return [];
+    const rows = await res.json();
+    const best = new Map();
+    for (const r of rows) {
+      const d = r.document?.fields; if (!d) continue;
+      const username = d.username?.stringValue || "—";
+      const progress = parseInt(d.progress?.integerValue || "0", 10);
+      const label = d.label?.stringValue || "";
+      const expeditions = parseInt(d.expeditions?.integerValue || "0", 10);
+      const prev = best.get(username);
+      if (!prev || progress > prev.progress) best.set(username, { username, progress, label, expeditions });
+    }
+    return [...best.values()].sort((a, b) => b.progress - a.progress).slice(0, limit);
+  } catch { return []; }
+}
+
+const VERSION = "0.104";
 
 /* persistent save (localStorage) — survives the run/battle state isn't saved,
    only your Hold progression: resources, building levels, runs done, the
@@ -679,6 +761,8 @@ export default function Emberhold() {
   const [res, setRes] = usePersistent("res", { gold: 100, wood: 60, embers: 4 });
   const [bld, setBld] = usePersistent("bld", { forge: 1, barracks: 1, arcanum: 1, shard: 1 });
   const [runsDone, setRunsDone] = usePersistent("runsDone", 0);
+  const [username, setUsername] = usePersistent("username", "");
+  const [bestProgress, setBestProgress] = usePersistent("bestProgress", { progress: 0, label: "" });
   const [forestUnlocked, setForestUnlocked] = usePersistent("forestUnlocked", false);
   const [caveUnlocked, setCaveUnlocked] = usePersistent("caveUnlocked", false);
   const [items, setItems] = usePersistent("items", []);
@@ -709,6 +793,10 @@ export default function Emberhold() {
   const [floats, setFloats] = useState([]);
   const [legendOpen, setLegendOpen] = useState(true);
   const [resetArmed, setResetArmed] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [lbRows, setLbRows] = useState(null);     // null = loading, [] = empty, [...] = data, undefined string handled in UI
+  const [lbLoading, setLbLoading] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   const [pinned, setPinned] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [showMap, setShowMap] = useState(false);
@@ -746,6 +834,39 @@ export default function Emberhold() {
     clearSave();
     try { location.reload(); } catch {}
   };
+
+  /* ---- leaderboard helpers ----
+     progress score: regionIndex * 1000 + (depth reached), with a +500 bonus
+     for clearing a region's boss, so "boss of cave" outranks "deep in cave"
+     but ranks below "any progress in forest". Higher = further. */
+  const computeProgress = (regionId, depth, bossKilled) => {
+    const ri = regionIndexOf(regionId);
+    return ri * 1000 + Math.max(0, depth) * 10 + (bossKilled ? 500 : 0);
+  };
+  const progressLabel = (regionId, depth, bossKilled) => {
+    const name = REGIONS[regionId]?.name || regionId;
+    if (bossKilled) {
+      const last = !nextRegion(regionId);
+      return last ? `${name} — realm cleared! 🏆` : `${name} — boss defeated`;
+    }
+    return `${name} — depth ${Math.max(1, depth + 1)}`;
+  };
+  /* record a new run result and push to the board if it's a personal best */
+  const recordProgress = (regionId, depth, bossKilled, expeditions) => {
+    const progress = computeProgress(regionId, depth, bossKilled);
+    const label = progressLabel(regionId, depth, bossKilled);
+    if (progress > (bestProgress.progress || 0)) {
+      setBestProgress({ progress, label, expeditions });
+      if (username) lbSubmit({ username, progress, label, expeditions });
+    }
+  };
+  const loadLeaderboard = async () => {
+    setLbLoading(true);
+    const rows = await lbFetchTop(25);
+    setLbRows(rows);
+    setLbLoading(false);
+  };
+
   useEffect(() => {
     MUSIC.setEnabled(musicOn);
     if (!musicOn) return;
@@ -1258,6 +1379,7 @@ export default function Emberhold() {
       return next;
     });
     const fallen = r.heroes.filter(h => !h.alive).map(h => h.id);
+    recordProgress(r.regionId, depthOf(r), bossKill, runsDone + 1);
     setSummary({ extracted, bossKill, gained, depth: depthOf(r) + 1, drops: r.drops, regionId: r.regionId, ogreKill: bossKill && r.regionId === "forest", fallen });
     setRun(null); setBattle(null);
     setScreen("summary");
@@ -1449,6 +1571,37 @@ export default function Emberhold() {
     const heroes = heroStats();
     return (
       <Shell title="Your Hold" sub={`${REALMS.earthen.icon} ${REALMS.earthen.name} · Expeditions: ${runsDone}${caveUnlocked ? " · 🕳️ Deep" : ""}${forestUnlocked ? " · 🌲 Forest" : ""}${Object.keys(benched).length ? ` · 🩹 ${Object.keys(benched).length} recovering` : ""}`}>
+        {!username && (
+          <div style={{ background: "#1c1730", border: `1px solid ${C.gold}66`, borderRadius: 12, padding: 16, marginBottom: 16, textAlign: "center" }}>
+            <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 700, color: C.gold, fontSize: 16, marginBottom: 6 }}>⚔️ Name your champion</div>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 12 }}>Choose a username for the leaderboard. This is how other players will see how far you've delved.</div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              <input
+                value={nameDraft}
+                onChange={e => setNameDraft(e.target.value.slice(0, 24))}
+                placeholder="Your name"
+                maxLength={24}
+                style={{ background: C.panel, border: `1px solid ${C.panel2}`, borderRadius: 8, padding: "8px 12px", color: C.text, fontSize: 14, fontFamily: "'Alegreya Sans',sans-serif", width: 180 }}
+              />
+              <button
+                onClick={() => { const n = nameDraft.trim(); if (n) setUsername(n); }}
+                disabled={!nameDraft.trim()}
+                style={{ background: nameDraft.trim() ? C.ember : "#352c44", color: nameDraft.trim() ? "#1a1020" : C.dim, border: "none", borderRadius: 8, padding: "8px 18px", fontFamily: "'Alegreya Sans',sans-serif", fontWeight: 700, fontSize: 13, cursor: nameDraft.trim() ? "pointer" : "default" }}
+              >Set name</button>
+            </div>
+          </div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginBottom: 14 }}>
+          <button onClick={() => { setShowLeaderboard(true); loadLeaderboard(); }} style={{ background: "transparent", color: C.gold, border: `1px solid ${C.gold}66`, borderRadius: 8, padding: "7px 18px", fontSize: 13, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif", fontWeight: 700 }}>
+            🏆 Leaderboard
+          </button>
+          {username && (
+            <span style={{ fontSize: 12, color: C.dim }}>
+              Playing as <span style={{ color: C.gold, fontWeight: 700 }}>{username}</span>
+              <button onClick={() => { setNameDraft(username); setUsername(""); }} style={{ marginLeft: 8, background: "transparent", color: C.dim, border: "none", textDecoration: "underline", fontSize: 11, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif" }}>change</button>
+            </span>
+          )}
+        </div>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}><Res res={res} /></div>
         <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
           {BUILDINGS.map(b => {
@@ -1531,8 +1684,8 @@ export default function Emberhold() {
             );
           })}
         </div>
-        <Btn full disabled={party.length !== 3} onClick={startRun}>
-          {party.length === 3 ? "🌫️ Venture into the Forgotten Marshland" : (() => {
+        <Btn full disabled={party.length !== 3 || !username} onClick={startRun}>
+          {!username ? "⚔️ Set a username above to begin" : party.length === 3 ? "🌫️ Venture into the Forgotten Marshland" : (() => {
             const available = HERO_DEFS.filter(h => !benched[h.id]).length;
             if (available < 3) return `Only ${available} heroes available — wait one expedition for recovery`;
             return `Select ${3 - party.length} more hero${3 - party.length === 1 ? "" : "es"}`;
@@ -1556,6 +1709,45 @@ export default function Emberhold() {
               onChange={e => setMusicVol(parseFloat(e.target.value))}
               style={{ width: 160, accentColor: C.ember, cursor: "pointer" }} />
             <span style={{ fontSize: 11, color: C.dim, minWidth: 32, textAlign: "right" }}>{Math.round(musicVol * 100)}%</span>
+          </div>
+        )}
+        {showLeaderboard && (
+          <div onClick={() => setShowLeaderboard(false)} style={{ position: "fixed", inset: 0, background: "#000a", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#15101f", border: `1px solid ${C.gold}66`, borderRadius: 14, padding: 18, width: "100%", maxWidth: 420, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontFamily: "'Cinzel',serif", fontWeight: 900, color: C.gold, fontSize: 18 }}>🏆 Leaderboard</div>
+                <button onClick={() => setShowLeaderboard(false)} style={{ marginLeft: "auto", background: "transparent", color: C.dim, border: "none", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ fontSize: 11, color: C.dim, marginBottom: 12 }}>Furthest delve into the Earthen Realm.</div>
+              <div style={{ overflowY: "auto", flex: 1 }}>
+                {!LB_ENABLED() ? (
+                  <div style={{ color: C.dim, fontSize: 13, textAlign: "center", padding: "24px 8px", lineHeight: 1.5 }}>
+                    The leaderboard isn't configured yet.<br />Add a Firebase project ID to enable online scores.
+                  </div>
+                ) : lbLoading ? (
+                  <div style={{ color: C.dim, textAlign: "center", padding: 24 }}>Loading…</div>
+                ) : !lbRows || lbRows.length === 0 ? (
+                  <div style={{ color: C.dim, textAlign: "center", padding: 24 }}>No entries yet — be the first to delve!</div>
+                ) : (
+                  lbRows.map((row, i) => {
+                    const isMe = row.username === username;
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, marginBottom: 4, background: isMe ? C.ember + "22" : i % 2 ? "#1a1426" : "transparent", border: isMe ? `1px solid ${C.ember}66` : "1px solid transparent" }}>
+                        <span style={{ width: 28, textAlign: "right", fontWeight: 700, color: i === 0 ? C.gold : i === 1 ? "#c9c9d4" : i === 2 ? "#cd7f32" : C.dim, fontSize: 14 }}>{i + 1}</span>
+                        <span style={{ flex: 1, color: isMe ? C.gold : C.text, fontWeight: isMe ? 700 : 500, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.username}{isMe ? " (you)" : ""}</span>
+                        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.3 }}>
+                          <span style={{ color: C.dim, fontSize: 12 }}>{row.label}</span>
+                          <span style={{ color: C.dim, fontSize: 10, opacity: 0.7 }}>{row.expeditions} expedition{row.expeditions === 1 ? "" : "s"}</span>
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              {LB_ENABLED() && (
+                <button onClick={loadLeaderboard} style={{ marginTop: 10, background: "transparent", color: C.dim, border: `1px solid ${C.panel2}`, borderRadius: 8, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "'Alegreya Sans',sans-serif" }}>↻ Refresh</button>
+              )}
+            </div>
           </div>
         )}
       </Shell>
